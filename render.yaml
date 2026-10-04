@@ -8,13 +8,9 @@ services:
     envVars:
       - key: APP_ENV
         value: production
-      - key: XAI_API_KEY
+      - key: GROQ_API_KEY
         sync: false
-      - key: GROK_MODEL
-        value: grok-4.1-fast
-      - key: SEARCH_API_KEY
-        sync: false
-      - key: SEARCH_API_URL
-        value: https://api.tavily.com/search
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
       - key: DATABASE_URL
         value: sqlite:///./factcheck.db
