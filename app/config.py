@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     allowed_hosts: str = "*"
     search_timeout: float = Field(default=10.0, gt=0, le=60)
     max_search_results: int = Field(default=12, gt=1, le=30)
+    rate_limit_per_minute: int = Field(default=20, gt=1, le=120)
+    max_request_bytes: int = Field(default=40 * 1024 * 1024, gt=1024, le=100 * 1024 * 1024)
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 
     @property

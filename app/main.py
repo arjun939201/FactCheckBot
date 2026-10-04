@@ -10,6 +10,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .config import get_settings
 from .routes import chat, factcheck, health, history
+from .middleware import request_guard
 
 settings = get_settings()
 app = FastAPI(
@@ -30,6 +31,8 @@ app.add_middleware(
 )
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
+app.middleware("http")(request_guard)
+
 
 @app.middleware("http")
 async def production_headers(request: Request, call_next):
@@ -41,6 +44,10 @@ async def production_headers(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+    if settings.app_env == "production" and request.url.scheme == "https":
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     response.headers["X-Response-Time-Ms"] = str(round((time.perf_counter() - started) * 1000, 2))
     return response
 
@@ -70,10 +77,4 @@ def script():
 
 @app.get("/share/{id}", include_in_schema=False)
 def share(id: int):
-    return HTMLResponse(
-        """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Fact Check Result</title><style>body{font:16px system-ui;max-width:760px;margin:40px auto;padding:20px;background:#f6f7f9}
-pre{white-space:pre-wrap;background:white;padding:20px;border-radius:14px;border:1px solid #ddd}</style></head>
-<body><h1>Fact Check</h1><p>Check claims. Follow the evidence.</p><pre id="r">Loading…</pre>
-<script>fetch("/api/share/%d").then(r=>{if(!r.ok)throw Error();return r.json()}).then(x=>document.getElementById("r").textContent=JSON.stringify(x,null,2)).catch(()=>document.getElementById("r").textContent="Result unavailable.")</script></body></html>""" % id
-    )
+    return FileResponse(frontend / "share.html")

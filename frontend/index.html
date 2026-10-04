@@ -1,5 +1,98 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="Fact Check — Check claims. Follow the evidence."><title>Fact Check</title><link rel="stylesheet" href="/styles.css"></head><body><header><div><b>✓⌕ Fact Check</b><small>Check claims. Follow the evidence.</small></div><nav><button data-v="fact" class="active">Fact Check</button><button data-v="chat">Chat</button><button data-v="history">History</button><button data-v="settings">Settings</button></nav></header><main>
-<section id="fact" class="view active"><p class="eyebrow">EVIDENCE-FIRST ANALYSIS</p><h1>What do you want to fact-check?</h1><p class="muted">Check claims, social posts, articles, screenshots, images, audio, or video.</p><div class="card"><div class="tabs"><button id="claimTab" class="active">Claim / text</button><button id="urlTab">Article URL</button></div><label class="analysis-mode">Content type<select id="contentMode"><option value="auto">Auto-detect</option><option value="factual">Factual claim</option><option value="argument">Argument</option><option value="opinion">Opinion</option><option value="propaganda">Propaganda / persuasion</option><option value="prediction">Prediction</option><option value="question">Question</option><option value="satire">Satire / unclear</option><option value="mixed">Mixed content</option></select></label><textarea id="input" placeholder="Paste a claim, news statement, article URL, or social-media post..."></textarea><div id="mediaBox"><label class="secondary" for="mediaInput">📎 Attach media</label><input id="mediaInput" type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif,audio/mpeg,audio/wav,audio/mp4,audio/ogg,audio/webm,video/mp4,video/webm,video/quicktime,video/mpeg"><div id="mediaList" class="muted">No attachments selected.</div><small class="muted">Up to 5 files. Images, audio, and video are analyzed for OCR, visual context, and transcription before evidence research.</small></div><button id="check" class="primary">CHECK CLAIM</button><button id="analyze" class="primary hide">ANALYZE URL</button><span id="status" class="muted"></span></div><div id="result"></div></section>
-<section id="chat" class="view"><p class="eyebrow">CHAT</p><h1>Fact Check Assistant</h1><div class="card"><div id="chatLog"></div><input id="chatInput" placeholder="Ask a question..."><button id="send" class="primary">SEND</button></div></section>
-<section id="history" class="view"><p class="eyebrow">YOUR CHECKS</p><h1>History</h1><div class="card"><input id="hq" placeholder="Search history"><button id="clear" class="secondary">Clear history</button><div id="historyList"></div></div></section>
-<section id="settings" class="view"><p class="eyebrow">CUSTOMIZE</p><h1>Settings</h1><div class="card settings"><label>Response detail<select id="detail"><option>quick</option><option selected>standard</option><option>detailed</option></select></label><label>Audience<select id="audience"><option>general</option><option>student</option><option>professional</option><option>research</option></select></label><label>Source preference<select id="sourcePref"><option value="any">Any reliable source</option><option value="official">Government / official</option><option value="academic">Academic / scientific</option><option value="news">Major news</option><option value="factcheck">Fact-checking organizations</option></select></label><label>Region<select id="region"><option>global</option><option>India</option><option>United States</option><option>United Kingdom</option></select></label><label>Language<select id="language"><option>English</option><option>Hindi</option><option>Telugu</option></select></label><p class="muted">Live evidence is retrieved through the application's web-search layer.</p></div></section></main><script src="/app.js"></script></body></html>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b0d10">
+  <meta name="description" content="Fact Check — evidence-first claim verification with live web research.">
+  <title>Fact Check — Follow the evidence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="shell">
+  <header class="topbar">
+    <a class="brand" href="#fact" aria-label="Fact Check home">
+      <span class="brand-mark">✓</span><span><strong>Fact Check</strong><small>Follow the evidence.</small></span>
+    </a>
+    <nav class="nav" aria-label="Primary">
+      <button data-v="fact" class="nav-btn active">Research</button>
+      <button data-v="chat" class="nav-btn">Assistant</button>
+      <button data-v="history" class="nav-btn">History</button>
+      <button data-v="settings" class="nav-btn">Settings</button>
+    </nav>
+    <div class="status-pill" id="systemStatus"><i></i><span>System ready</span></div>
+  </header>
+
+  <main>
+    <section id="fact" class="view active">
+      <div class="hero">
+        <div class="eyebrow">EVIDENCE-FIRST RESEARCH</div>
+        <h1>Don't just ask if it's true.<br><em>Show me why.</em></h1>
+        <p>Investigate claims with live sources, claim-level evidence, contradiction checks, and transparent uncertainty.</p>
+      </div>
+
+      <div class="workspace card">
+        <div class="mode-row">
+          <div class="segmented" role="tablist">
+            <button id="claimTab" class="seg active" role="tab">Claim / media</button>
+            <button id="urlTab" class="seg" role="tab">Article URL</button>
+          </div>
+          <label class="compact-control">Analysis
+            <select id="contentMode"><option value="auto">Auto-detect</option><option value="factual">Factual claim</option><option value="argument">Argument</option><option value="opinion">Opinion</option><option value="propaganda">Propaganda / persuasion</option><option value="prediction">Prediction</option><option value="question">Question</option><option value="satire">Satire / unclear</option><option value="mixed">Mixed content</option></select>
+          </label>
+        </div>
+        <div class="composer">
+          <textarea id="input" maxlength="12000" placeholder="Paste a claim, social post, quote, statistic, or question…" aria-label="Content to fact-check"></textarea>
+          <div class="composer-footer">
+            <div class="attachment-zone" id="mediaBox">
+              <label for="mediaInput" class="attach-btn">＋ Add evidence media</label>
+              <input id="mediaInput" type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif,audio/mpeg,audio/wav,audio/mp4,audio/ogg,audio/webm,video/mp4,video/webm,video/quicktime,video/mpeg">
+              <div id="mediaList" class="file-list">Images, audio and video · up to 5 files</div>
+            </div>
+            <div class="char-count"><span id="charCount">0</span>/12,000</div>
+          </div>
+        </div>
+        <div class="research-options">
+          <button id="advancedToggle" class="link-btn" aria-expanded="false">Research preferences <span>⌄</span></button>
+          <div id="advanced" class="advanced hidden">
+            <label>Detail<select id="detail"><option>quick</option><option selected>standard</option><option>detailed</option></select></label>
+            <label>Audience<select id="audience"><option>general</option><option>student</option><option>professional</option><option>research</option></select></label>
+            <label>Sources<select id="sourcePref"><option value="any">Any reliable source</option><option value="official">Government / official</option><option value="academic">Academic / scientific</option><option value="news">Major news</option><option value="factcheck">Fact-checking organizations</option></select></label>
+            <label>Region<select id="region"><option>global</option><option>India</option><option>United States</option><option>United Kingdom</option></select></label>
+            <label>Language<select id="language"><option>English</option><option>Hindi</option><option>Telugu</option></select></label>
+          </div>
+        </div>
+        <div class="action-row">
+          <div id="status" class="run-status" aria-live="polite"></div>
+          <button id="check" class="primary big">Start investigation <span>→</span></button>
+          <button id="analyze" class="primary big hide">Investigate article <span>→</span></button>
+        </div>
+      </div>
+      <div class="trust-row"><span>LIVE WEB RESEARCH</span><span>CLAIM-LEVEL MAPPING</span><span>SOURCE TRACEABILITY</span><span>UNCERTAINTY-AWARE</span></div>
+      <div id="result" aria-live="polite"></div>
+    </section>
+
+    <section id="chat" class="view">
+      <div class="page-head"><div class="eyebrow">RESEARCH ASSISTANT</div><h2>Ask follow-up questions.</h2><p>Use the assistant to understand an investigation. It does not turn unsupported statements into verified facts.</p></div>
+      <div class="chat-card card"><div id="chatLog" class="chat-log"><div class="empty-chat"><span>◌</span><b>Research assistant</b><p>Ask what a source means, what remains uncertain, or what evidence would change a verdict.</p></div></div><div class="chat-compose"><input id="chatInput" maxlength="12000" placeholder="Ask about the evidence…"><button id="send" class="primary">Send</button></div></div>
+    </section>
+
+    <section id="history" class="view">
+      <div class="page-head"><div class="eyebrow">YOUR RESEARCH</div><h2>Investigation history.</h2><p>Results are stored for this browser session. Shared results are separate public links.</p></div>
+      <div class="card history-card"><div class="history-toolbar"><div class="search-box">⌕<input id="hq" placeholder="Search investigations"></div><button id="clear" class="secondary">Clear all</button></div><div id="historyList"></div></div>
+    </section>
+
+    <section id="settings" class="view">
+      <div class="page-head"><div class="eyebrow">CONTROL CENTER</div><h2>Research settings.</h2><p>Preferences stay in this browser and are applied to new investigations.</p></div>
+      <div class="settings-grid">
+        <div class="card setting-card"><h3>Analysis</h3><label>Response detail<select id="detail2"><option>quick</option><option selected>standard</option><option>detailed</option></select></label><label>Audience<select id="audience2"><option>general</option><option>student</option><option>professional</option><option>research</option></select></label></div>
+        <div class="card setting-card"><h3>Evidence</h3><label>Source preference<select id="sourcePref2"><option value="any">Any reliable source</option><option value="official">Government / official</option><option value="academic">Academic / scientific</option><option value="news">Major news</option><option value="factcheck">Fact-checking organizations</option></select></label><label>Region<select id="region2"><option>global</option><option>India</option><option>United States</option><option>United Kingdom</option></select></label></div>
+        <div class="card setting-card"><h3>Language</h3><label>Output language<select id="language2"><option>English</option><option>Hindi</option><option>Telugu</option></select></label><div class="info-note">The research engine prioritizes retrieved evidence over model memory.</div></div>
+      </div>
+    </section>
+  </main>
+  <footer><span>Fact Check</span><span>Evidence over confidence.</span><span id="version"></span></footer>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>
