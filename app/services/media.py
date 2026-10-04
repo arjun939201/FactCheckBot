@@ -36,15 +36,23 @@ async def _vision(data,media_type):
     prompt='''Analyze this uploaded image for a fact-checking system. Return JSON only:
 {"visible_text":"readable text","visual_summary":"objective visual description","claims_or_context":["verifiable claims suggested by the image"],"uncertainties":["things not established by the image"]}
 Do not infer identity, intent, authenticity, location, date, or events unless directly visible.'''
-    async with httpx.AsyncClient(timeout=s.request_timeout) as c:
-        r=await c.post("https://api.groq.com/openai/v1/chat/completions",
-          headers={"Authorization":"Bearer "+s.groq_api_key,"Content-Type":"application/json"},
-          json={"model":s.groq_vision_model,"temperature":0.1,"messages":[{"role":"user","content":[{"type":"text","text":prompt},{"type":"image_url","image_url":{"url":_data_url(data,media_type)}}]}]})
-        r.raise_for_status()
-        content=r.json()["choices"][0]["message"]["content"].strip()
-    fence=chr(96)*3
-    if content.startswith(fence): content=content.split("\n",1)[-1].rsplit(fence,1)[0].strip()
-    return json.loads(content)
+    models=[s.groq_vision_model]
+    if s.groq_vision_fallback_model and s.groq_vision_fallback_model not in models: models.append(s.groq_vision_fallback_model)
+    last_error=None
+    for model in models:
+        try:
+            async with httpx.AsyncClient(timeout=s.request_timeout) as c:
+                r=await c.post("https://api.groq.com/openai/v1/chat/completions",headers={"Authorization":"Bearer "+s.groq_api_key,"Content-Type":"application/json"},json={"model":model,"temperature":0.1,"messages":[{"role":"user","content":[{"type":"text","text":prompt},{"type":"image_url","image_url":{"url":_data_url(data,media_type)}}]}]})
+                if r.status_code==404 and model != models[-1]: continue
+                r.raise_for_status()
+                content=r.json()["choices"][0]["message"]["content"].strip()
+            fence=chr(96)*3
+            if content.startswith(fence): content=content.split("\n",1)[-1].rsplit(fence,1)[0].strip()
+            return json.loads(content)
+        except httpx.HTTPStatusError as e:
+            last_error=e
+            if e.response.status_code!=404: raise
+    raise RuntimeError("No configured Groq vision model is available. Check GROQ_VISION_MODEL and GROQ_VISION_FALLBACK_MODEL.") from last_error
 
 async def _transcribe(data,filename,media_type):
     s=get_settings()
