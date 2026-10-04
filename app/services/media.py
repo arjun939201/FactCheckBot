@@ -1,4 +1,4 @@
-import base64,io,json,os,subprocess,tempfile,logging
+import base64,io,json,os,subprocess,tempfile,logging,time
 from dataclasses import dataclass
 import httpx
 from PIL import Image
@@ -13,6 +13,11 @@ MAX_VIDEO=25*1024*1024
 IMAGES={"image/jpeg","image/png","image/webp","image/gif"}
 AUDIOS={"audio/mpeg","audio/mp3","audio/wav","audio/x-wav","audio/mp4","audio/m4a","audio/ogg","audio/webm"}
 VIDEOS={"video/mp4","video/webm","video/quicktime","video/mpeg"}
+VISION_CACHE_TTL=300
+_vision_cache:tuple[float,list[str]]=(0.0,[])
+
+class MediaCapabilityError(RuntimeError):
+    """Raised when the configured provider cannot process a media type."""
 
 @dataclass
 class MediaContext:
@@ -32,48 +37,74 @@ async def _read(f,limit):
 def _data_url(data,media_type):
     return "data:"+media_type+";base64,"+base64.b64encode(data).decode()
 
-def _vision_candidates(models):
-    # Groq does not expose a stable vision flag in every model-list response.
-    # Restrict discovery to model families known to support image input.
-    patterns=("llama-4-scout","llama-4-maverick","vision","qwen2-vl","qwen-vl","gemma-3")
-    return [m for m in models if any(p in m.lower() for p in patterns)]
+def _contains_image_capability(value):
+    if isinstance(value,str):
+        v=value.lower().replace("_","-")
+        return v in {"image","images","vision","multimodal","image-input","image-inputs"} or "image" in v or "vision" in v
+    if isinstance(value,list): return any(_contains_image_capability(x) for x in value)
+    if isinstance(value,dict): return any(_contains_image_capability(x) for x in value.values())
+    return False
 
-async def _discover_vision_models():
+def _vision_candidates(models):
+    """Select models from Groq metadata, with legacy ID fallback.
+
+    Groq has changed model IDs and metadata over time. Capability metadata is
+    preferred; name matching is retained only for older responses that expose
+    no modality information.
+    """
+    candidates=[]
+    legacy=("llama-4-scout","llama-4-maverick","vision","qwen2-vl","qwen-vl","gemma-3")
+    for item in models:
+        if isinstance(item,str):
+            model_id=item; capable=any(p in model_id.lower() for p in legacy)
+        elif isinstance(item,dict):
+            model_id=str(item.get("id","")).strip()
+            capable=_contains_image_capability({k:item.get(k) for k in ("architecture","modalities","input_modalities","supported_modalities","capabilities","features") if k in item})
+            if not capable: capable=any(p in model_id.lower() for p in legacy)
+        else:
+            continue
+        if model_id and capable and model_id not in candidates: candidates.append(model_id)
+    return candidates
+
+async def _discover_vision_models(force=False):
+    global _vision_cache
+    now=time.monotonic()
+    if not force and now-_vision_cache[0] < VISION_CACHE_TTL:
+        return _vision_cache[1]
     s=get_settings()
-    async with httpx.AsyncClient(timeout=s.request_timeout) as c:
-        r=await c.get(
-            "https://api.groq.com/openai/v1/models",
-            headers={"Authorization":"Bearer "+s.groq_api_key},
-        )
-        r.raise_for_status()
-        data=r.json()
-    ids=[str(x.get("id","")) for x in data.get("data",[]) if isinstance(x,dict)]
-    return _vision_candidates(ids)
+    try:
+        async with httpx.AsyncClient(timeout=s.request_timeout) as c:
+            r=await c.get("https://api.groq.com/openai/v1/models",headers={"Authorization":"Bearer "+s.groq_api_key})
+            r.raise_for_status()
+            payload=r.json()
+    except httpx.HTTPError:
+        raise
+    models=payload.get("data",[]) if isinstance(payload,dict) else []
+    candidates=_vision_candidates(models)
+    _vision_cache=(now,candidates)
+    return candidates
 
 async def _call_vision_model(model,data,media_type,prompt):
     s=get_settings()
     async with httpx.AsyncClient(timeout=s.request_timeout) as c:
-        r=await c.post(
-            "https://api.groq.com/openai/v1/chat/completions",
+        r=await c.post("https://api.groq.com/openai/v1/chat/completions",
             headers={"Authorization":"Bearer "+s.groq_api_key,"Content-Type":"application/json"},
-            json={"model":model,"temperature":0.1,"messages":[
-                {"role":"user","content":[
-                    {"type":"text","text":prompt},
-                    {"type":"image_url","image_url":{"url":_data_url(data,media_type)}},
-                ]}
-            ]},
-        )
+            json={"model":model,"temperature":0.1,"messages":[{"role":"user","content":[
+                {"type":"text","text":prompt},
+                {"type":"image_url","image_url":{"url":_data_url(data,media_type)}}
+            ]}]})
         if r.status_code==404:
             raise httpx.HTTPStatusError("Groq vision model unavailable",request=r.request,response=r)
         r.raise_for_status()
-        content=r.json()["choices"][0]["message"]["content"].strip()
+        body=r.json()
+        content=body["choices"][0]["message"]["content"].strip()
     fence=chr(96)*3
     if content.startswith(fence): content=content.split("\n",1)[-1].rsplit(fence,1)[0].strip()
     return json.loads(content)
 
 async def _vision(data,media_type):
     s=get_settings()
-    if not s.groq_api_key: raise RuntimeError("Groq API is not configured")
+    if not s.groq_api_key: raise MediaCapabilityError("Groq API is not configured for image analysis.")
     prompt='''Analyze this uploaded image for a fact-checking system. Return JSON only:
 {"visible_text":"readable text","visual_summary":"objective visual description","claims_or_context":["verifiable claims suggested by the image"],"uncertainties":["things not established by the image"]}
 Do not infer identity, intent, authenticity, location, date, or events unless directly visible.'''
@@ -92,10 +123,10 @@ Do not infer identity, intent, authenticity, location, date, or events unless di
             logger.warning("Configured Groq vision model unavailable: %s",model)
 
     try:
-        discovered=await _discover_vision_models()
+        discovered=await _discover_vision_models(force=True)
     except httpx.HTTPError as e:
-        logger.exception("Groq model discovery failed after configured vision models were unavailable")
-        raise RuntimeError("Groq vision models are unavailable and automatic model discovery failed.") from e
+        logger.exception("Groq multimodal model discovery failed")
+        raise MediaCapabilityError("Groq image analysis is temporarily unavailable because the model catalog could not be checked.") from e
 
     logger.info("Discovered Groq multimodal candidates: %s",discovered)
     for model in discovered:
@@ -108,9 +139,9 @@ Do not infer identity, intent, authenticity, location, date, or events unless di
                 continue
             raise
 
-    raise RuntimeError(
-        "No currently available Groq multimodal model was found. "
-        "Check the Groq account's available models or set GROQ_VISION_MODEL to an available vision-capable model."
+    raise MediaCapabilityError(
+        "Image analysis is currently unavailable for this Groq account. "
+        "The account has no usable multimodal model. Set GROQ_VISION_MODEL to a currently available vision-capable Groq model."
     ) from last_error
 
 async def _transcribe(data,filename,media_type):
@@ -124,8 +155,7 @@ async def _transcribe(data,filename,media_type):
         r.raise_for_status()
         return r.text.strip()
 
-def _ffmpeg():
-    return __import__("imageio_ffmpeg").get_ffmpeg_exe()
+def _ffmpeg(): return __import__("imageio_ffmpeg").get_ffmpeg_exe()
 
 def _frames(data,suffix):
     with tempfile.TemporaryDirectory() as td:
@@ -147,25 +177,26 @@ async def extract_media(file:UploadFile)->MediaContext:
         data=await _read(file,MAX_IMAGE)
         try:
             im=Image.open(io.BytesIO(data)); im.thumbnail((1600,1600))
-            buf=io.BytesIO(); im.convert("RGB").save(buf,format="JPEG",quality=85,optimize=True)
-            data=buf.getvalue()
+            buf=io.BytesIO(); im.convert("RGB").save(buf,format="JPEG",quality=85,optimize=True); data=buf.getvalue()
         except Exception as e: raise ValueError("The uploaded image could not be decoded.") from e
         x=await _vision(data,"image/jpeg")
         extra="\n".join(x.get("claims_or_context",[])+x.get("uncertainties",[]))
-        return MediaContext(name,mt,len(data),"image",x.get("visible_text",""),x.get("visual_summary","")+(("\n"+extra) if extra else ""))
+        return MediaContext(name,mt,len(data),"image",x.get("visible_text",""),x.get("visual_summary","")+("\n"+extra if extra else ""))
     if mt in AUDIOS:
         data=await _read(file,MAX_AUDIO)
         return MediaContext(name,mt,len(data),"audio",await _transcribe(data,name,mt),"Audio transcription supplied for claim analysis.")
     if mt in VIDEOS:
-        data=await _read(file,MAX_VIDEO); suffix=os.path.splitext(name)[1] or ".mp4"
-        desc=[]
+        data=await _read(file,MAX_VIDEO); suffix=os.path.splitext(name)[1] or ".mp4"; desc=[]
         for frame in _frames(data,suffix):
             try:
-                x=await _vision(frame,"image/jpeg")
-                desc.append(x.get("visual_summary",""))
+                x=await _vision(frame,"image/jpeg"); desc.append(x.get("visual_summary",""))
                 if x.get("visible_text"): desc.append("Visible text: "+x["visible_text"])
-            except Exception: pass
-        aud,amt=_audio(data,suffix)
-        transcript=await _transcribe(aud,"video-audio.mp3",amt) if aud else ""
+            except MediaCapabilityError:
+                logger.warning("Video visual analysis unavailable; continuing with audio transcription")
+                break
+            except Exception:
+                logger.exception("Video frame analysis failed; continuing with remaining media")
+        aud,amt=_audio(data,suffix); transcript=await _transcribe(aud,"video-audio.mp3",amt) if aud else ""
+        if not transcript and not desc: raise MediaCapabilityError("Video analysis produced no usable audio or visual content.")
         return MediaContext(name,mt,len(data),"video",transcript,"\n".join(x for x in desc if x))
     raise ValueError("Unsupported attachment. Use JPG, PNG, WEBP, GIF, MP3, WAV, M4A, OGG, WEBM, MP4, MOV, or MPEG.")

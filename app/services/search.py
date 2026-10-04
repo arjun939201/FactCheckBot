@@ -5,8 +5,8 @@ from urllib.parse import quote_plus,urlparse
 from xml.etree import ElementTree as ET
 from collections import Counter
 import httpx
-from ddgs import DDGS
 from .source_validator import source_type_for
+from ..config import get_settings
 
 logger=logging.getLogger(__name__)
 class SearchError(Exception):pass
@@ -22,6 +22,8 @@ def _quality(source_type,publisher,url):
 def _normalise(results):
     out=[];seen=set()
     for x in results:
+        if not isinstance(x,dict):
+            continue
         u=x.get("href") or x.get("url") or ""
         if urlparse(u).scheme not in {"http","https"} or u in seen:continue
         seen.add(u);title=str(x.get("title",""))[:300];publisher=urlparse(u).netloc
@@ -30,6 +32,7 @@ def _normalise(results):
     return out
 
 def _ddgs_search(query,max_results,backend=None):
+    from ddgs import DDGS
     kwargs={"max_results":max_results}
     if backend:kwargs["backend"]=backend
     return list(DDGS().text(query,**kwargs))
@@ -47,7 +50,7 @@ async def _ddgs(query,max_results):
 async def _google_news(query,max_results):
     url="https://news.google.com/rss/search?q="+quote_plus(query)+"&hl=en-IN&gl=IN&ceid=IN:en"
     try:
-        async with httpx.AsyncClient(timeout=8,follow_redirects=True,headers={"User-Agent":"FactCheck/1.0"}) as client:
+        async with httpx.AsyncClient(timeout=get_settings().search_timeout,follow_redirects=True,headers={"User-Agent":"FactCheck/1.1"}) as client:
             r=await client.get(url);r.raise_for_status()
         root=ET.fromstring(r.text)
     except Exception as e:logger.warning("Google News RSS failed: error=%s",type(e).__name__);return []
@@ -60,7 +63,9 @@ def _queries(query):
     q=" ".join(query.split());parts=[p.strip() for p in re.split(r"(?<=[.!?])\s+",q) if p.strip()]
     return list(dict.fromkeys([q]+parts[:2]+([q[:180]] if len(q)>180 else [])))[:4]
 
-async def search_web(query:str,max_results:int=6)->list[dict]:
+async def search_web(query:str,max_results:int|None=None)->list[dict]:
+    max_results=max_results or get_settings().max_search_results
+    max_results=max(2,min(max_results,30))
     queries=_queries(query)
     batches=await asyncio.gather(*[_ddgs(q,max_results) for q in queries],*[_google_news(q,max_results) for q in queries])
     results=_normalise([item for batch in batches for item in batch])

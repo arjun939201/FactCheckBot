@@ -38,6 +38,10 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None)->Fac
             return []
         return [x if isinstance(x,dict) else {"url":str(x)} for x in value]
 
+    for x in evidence:
+        x["source_tier"] = str(x.get("source_tier", "Other"))
+        try: x["source_quality"] = max(0, min(100, int(x.get("source_quality", 0))))
+        except (TypeError, ValueError): x["source_quality"] = 0
     known={x["url"] for x in evidence};by_id={x["evidence_id"]:x for x in evidence}
     for k in ("sources","supporting_evidence","contradicting_evidence"):
         data[k]=[x for x in _object_list(data.get(k,[])) if x.get("url") in known]

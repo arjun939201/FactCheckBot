@@ -102,5 +102,5 @@ async def test_run_fact_check_normalizes_string_evidence(monkeypatch):
 
     result=await fc.run_fact_check("Test claim", {"content_mode":"auto"})
     assert result.verdict.value == "TRUE"
-    assert result.sources[0].url == "https://example.com/evidence"
+    assert str(result.sources[0].url) == "https://example.com/evidence"
     assert result.claims_checked[0].supporting_evidence_ids == ["E01"]

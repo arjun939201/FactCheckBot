@@ -3,7 +3,7 @@ services:
     name: fact-check
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers
     healthCheckPath: /api/health
     envVars:
       - key: APP_ENV
@@ -11,8 +11,12 @@ services:
       - key: GROQ_API_KEY
         sync: false
       - key: GROQ_MODEL
-        value: llama-3.3-70b-versatile
-      - key: GROQ_FALLBACK_MODEL
         value: openai/gpt-oss-120b
+      - key: GROQ_FALLBACK_MODEL
+        sync: false
       - key: DATABASE_URL
         sync: false
+      - key: CORS_ORIGINS
+        value: '*'
+      - key: ALLOWED_HOSTS
+        value: '*'

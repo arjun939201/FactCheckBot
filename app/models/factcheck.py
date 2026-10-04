@@ -16,7 +16,7 @@ class Evidence(BaseModel):
     source_quality:int=Field(default=0,ge=0,le=100); source_tier:str="Other"
 class ClaimAssessment(BaseModel):
     claim:str; content_type:ContentType=ContentType.FACT; verdict:Verdict; confidence:int=Field(ge=0,le=100); summary:str
-    supporting_evidence_ids:list[str]=[]; contradicting_evidence_ids:list[str]=[]
+    supporting_evidence_ids:list[str]=Field(default_factory=list); contradicting_evidence_ids:list[str]=Field(default_factory=list)
     source_quality:int=Field(default=0,ge=0,le=100); corroboration_count:int=0
     reasoning:str=""; what_would_change_conclusion:str=""
 class FactCheckRequest(BaseModel):
@@ -31,14 +31,14 @@ class MediaAttachment(BaseModel):
     filename:str; media_type:str; kind:str; size_bytes:int; extracted_text:str=""; visual_summary:str=""
 class FactCheckResult(BaseModel):
     claim:str; verdict:Verdict; confidence:int=Field(ge=0,le=100); summary:str; reasoning:str
-    key_points:list[str]=[]; supporting_evidence:list[Evidence]=[]; contradicting_evidence:list[Evidence]=[]
-    context:str=""; sources:list[Source]=[]; uncertainties:list[str]=[]; content_type:ContentType=ContentType.FACT
-    report_title:str="Fact Check Analysis Report"; report_sections:list[str]=[]; attachments:list[MediaAttachment]=[]
+    key_points:list[str]=Field(default_factory=list); supporting_evidence:list[Evidence]=Field(default_factory=list); contradicting_evidence:list[Evidence]=Field(default_factory=list)
+    context:str=""; sources:list[Source]=Field(default_factory=list); uncertainties:list[str]=Field(default_factory=list); content_type:ContentType=ContentType.FACT
+    report_title:str="Fact Check Analysis Report"; report_sections:list[str]=Field(default_factory=list); attachments:list[MediaAttachment]=Field(default_factory=list)
     last_checked:str=Field(default_factory=lambda:datetime.now(timezone.utc).isoformat()); live_evidence_available:bool=False
-    claims_checked:list[ClaimAssessment]=[]
+    claims_checked:list[ClaimAssessment]=Field(default_factory=list)
 class ArticleClaim(BaseModel):
     claim:str; verdict:Verdict; confidence:int=Field(ge=0,le=100); summary:str
 class ArticleFactCheck(BaseModel):
     article_title:str=""; article_url:HttpUrl; overall_verdict:Verdict; overall_confidence:int=Field(ge=0,le=100)
-    summary:str; claims_checked:list[ArticleClaim]=[]; sources:list[Source]=[]; uncertainties:list[str]=[]
+    summary:str; claims_checked:list[ArticleClaim]=Field(default_factory=list); sources:list[Source]=Field(default_factory=list); uncertainties:list[str]=Field(default_factory=list)
     last_checked:str=Field(default_factory=lambda:datetime.now(timezone.utc).isoformat()); live_evidence_available:bool=False
