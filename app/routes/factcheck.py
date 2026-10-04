@@ -8,7 +8,7 @@ logger=logging.getLogger(__name__)
 router=APIRouter();store=HistoryStore()
 
 def prefs(r):
-    return {"detail":r.detail,"audience":r.audience,"source_preference":r.source_preference,"region":r.region,"language":r.language}
+    return {"content_mode":r.content_mode,"detail":r.detail,"audience":r.audience,"source_preference":r.source_preference,"region":r.region,"language":r.language}
 
 @router.post("/fact-check")
 async def fact_check(req:FactCheckRequest):
