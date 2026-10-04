@@ -1,9 +1,11 @@
-import base64,io,json,os,subprocess,tempfile
+import base64,io,json,os,subprocess,tempfile,logging
 from dataclasses import dataclass
 import httpx
 from PIL import Image
 from fastapi import UploadFile
 from ..config import get_settings
+
+logger=logging.getLogger(__name__)
 
 MAX_IMAGE=10*1024*1024
 MAX_AUDIO=25*1024*1024
@@ -30,29 +32,86 @@ async def _read(f,limit):
 def _data_url(data,media_type):
     return "data:"+media_type+";base64,"+base64.b64encode(data).decode()
 
+def _vision_candidates(models):
+    # Groq does not expose a stable vision flag in every model-list response.
+    # Restrict discovery to model families known to support image input.
+    patterns=("llama-4-scout","llama-4-maverick","vision","qwen2-vl","qwen-vl","gemma-3")
+    return [m for m in models if any(p in m.lower() for p in patterns)]
+
+async def _discover_vision_models():
+    s=get_settings()
+    async with httpx.AsyncClient(timeout=s.request_timeout) as c:
+        r=await c.get(
+            "https://api.groq.com/openai/v1/models",
+            headers={"Authorization":"Bearer "+s.groq_api_key},
+        )
+        r.raise_for_status()
+        data=r.json()
+    ids=[str(x.get("id","")) for x in data.get("data",[]) if isinstance(x,dict)]
+    return _vision_candidates(ids)
+
+async def _call_vision_model(model,data,media_type,prompt):
+    s=get_settings()
+    async with httpx.AsyncClient(timeout=s.request_timeout) as c:
+        r=await c.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers={"Authorization":"Bearer "+s.groq_api_key,"Content-Type":"application/json"},
+            json={"model":model,"temperature":0.1,"messages":[
+                {"role":"user","content":[
+                    {"type":"text","text":prompt},
+                    {"type":"image_url","image_url":{"url":_data_url(data,media_type)}},
+                ]}
+            ]},
+        )
+        if r.status_code==404:
+            raise httpx.HTTPStatusError("Groq vision model unavailable",request=r.request,response=r)
+        r.raise_for_status()
+        content=r.json()["choices"][0]["message"]["content"].strip()
+    fence=chr(96)*3
+    if content.startswith(fence): content=content.split("\n",1)[-1].rsplit(fence,1)[0].strip()
+    return json.loads(content)
+
 async def _vision(data,media_type):
     s=get_settings()
     if not s.groq_api_key: raise RuntimeError("Groq API is not configured")
     prompt='''Analyze this uploaded image for a fact-checking system. Return JSON only:
 {"visible_text":"readable text","visual_summary":"objective visual description","claims_or_context":["verifiable claims suggested by the image"],"uncertainties":["things not established by the image"]}
 Do not infer identity, intent, authenticity, location, date, or events unless directly visible.'''
-    models=[s.groq_vision_model]
-    if s.groq_vision_fallback_model and s.groq_vision_fallback_model not in models: models.append(s.groq_vision_fallback_model)
+
+    configured=[]
+    for model in (s.groq_vision_model,s.groq_vision_fallback_model):
+        if model and model not in configured: configured.append(model)
+
     last_error=None
-    for model in models:
+    for model in configured:
         try:
-            async with httpx.AsyncClient(timeout=s.request_timeout) as c:
-                r=await c.post("https://api.groq.com/openai/v1/chat/completions",headers={"Authorization":"Bearer "+s.groq_api_key,"Content-Type":"application/json"},json={"model":model,"temperature":0.1,"messages":[{"role":"user","content":[{"type":"text","text":prompt},{"type":"image_url","image_url":{"url":_data_url(data,media_type)}}]}]})
-                if r.status_code==404 and model != models[-1]: continue
-                r.raise_for_status()
-                content=r.json()["choices"][0]["message"]["content"].strip()
-            fence=chr(96)*3
-            if content.startswith(fence): content=content.split("\n",1)[-1].rsplit(fence,1)[0].strip()
-            return json.loads(content)
+            return await _call_vision_model(model,data,media_type,prompt)
         except httpx.HTTPStatusError as e:
             last_error=e
             if e.response.status_code!=404: raise
-    raise RuntimeError("No configured Groq vision model is available. Check GROQ_VISION_MODEL and GROQ_VISION_FALLBACK_MODEL.") from last_error
+            logger.warning("Configured Groq vision model unavailable: %s",model)
+
+    try:
+        discovered=await _discover_vision_models()
+    except httpx.HTTPError as e:
+        logger.exception("Groq model discovery failed after configured vision models were unavailable")
+        raise RuntimeError("Groq vision models are unavailable and automatic model discovery failed.") from e
+
+    logger.info("Discovered Groq multimodal candidates: %s",discovered)
+    for model in discovered:
+        if model in configured: continue
+        try:
+            return await _call_vision_model(model,data,media_type,prompt)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code==404:
+                logger.warning("Discovered Groq vision candidate unavailable: %s",model)
+                continue
+            raise
+
+    raise RuntimeError(
+        "No currently available Groq multimodal model was found. "
+        "Check the Groq account's available models or set GROQ_VISION_MODEL to an available vision-capable model."
+    ) from last_error
 
 async def _transcribe(data,filename,media_type):
     s=get_settings()
