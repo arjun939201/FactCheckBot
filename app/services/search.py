@@ -1,27 +1,84 @@
 import asyncio
-from urllib.parse import urlparse
+import logging
+import re
+from urllib.parse import quote_plus,urlparse
+from xml.etree import ElementTree as ET
+
+import httpx
 from ddgs import DDGS
+
 from .source_validator import source_type_for
+
+logger=logging.getLogger(__name__)
 
 class SearchError(Exception):pass
 
-def _search_sync(query:str,max_results:int):
-    return list(DDGS().text(query,max_results=max_results))
-
-async def search_web(query:str,max_results:int=6)->list[dict]:
-    try:
-        results=await asyncio.to_thread(_search_sync,query,max_results)
-    except Exception as e:
-        raise SearchError("Free web search failed") from e
+def _normalise(results):
     out=[]
+    seen=set()
     for x in results:
         u=x.get("href") or x.get("url") or ""
-        if urlparse(u).scheme not in {"http","https"}:continue
+        if urlparse(u).scheme not in {"http","https"} or u in seen:
+            continue
+        seen.add(u)
         out.append({
-            "title":x.get("title","")[:300],
+            "title":str(x.get("title",""))[:300],
             "url":u,
-            "content":x.get("body","")[:5000],
+            "content":str(x.get("body") or x.get("description") or "")[:5000],
             "publisher":urlparse(u).netloc,
-            "source_type":source_type_for(x.get("title",""),urlparse(u).netloc,u)
+            "source_type":source_type_for(str(x.get("title","")),urlparse(u).netloc,u),
         })
     return out
+
+def _ddgs_search(query,max_results,backend):
+    kwargs={"max_results":max_results}
+    if backend:
+        kwargs["backend"]=backend
+    return list(DDGS().text(query,**kwargs))
+
+async def _ddgs(query,max_results):
+    results=[]
+    for backend in ("auto","google","bing"):
+        try:
+            results.extend(await asyncio.to_thread(_ddgs_search,query,max_results,backend))
+        except Exception as e:
+            logger.warning("DDGS backend failed: backend=%s error=%s",backend,type(e).__name__)
+    return _normalise(results)
+
+async def _google_news(query,max_results):
+    url="https://news.google.com/rss/search?q="+quote_plus(query)+"&hl=en-IN&gl=IN&ceid=IN:en"
+    try:
+        async with httpx.AsyncClient(timeout=10,follow_redirects=True,headers={"User-Agent":"FactCheck/1.0"}) as client:
+            r=await client.get(url)
+            r.raise_for_status()
+        root=ET.fromstring(r.text)
+    except Exception as e:
+        logger.warning("Google News RSS failed: error=%s",type(e).__name__)
+        return []
+    results=[]
+    for item in root.findall(".//item")[:max_results]:
+        title=item.findtext("title") or ""
+        link=item.findtext("link") or ""
+        description=re.sub("<[^>]+>"," ",item.findtext("description") or "").strip()
+        results.append({"title":title,"url":link,"body":description})
+    return _normalise(results)
+
+def _queries(query):
+    q=" ".join(query.split())
+    parts=[p.strip() for p in re.split(r"(?<=[.!?])\s+",q) if p.strip()]
+    queries=[q]
+    if len(parts)>1:
+        queries.extend(parts[:2])
+    if len(q)>180:
+        queries.append(q[:180])
+    return list(dict.fromkeys(queries))[:3]
+
+async def search_web(query:str,max_results:int=6)->list[dict]:
+    all_results=[]
+    for q in _queries(query):
+        all_results.extend(await _ddgs(q,max_results))
+        all_results.extend(await _google_news(q,max_results))
+    results=_normalise(all_results)
+    if not results:
+        raise SearchError("No live web evidence was retrieved")
+    return results[:max_results*2]
