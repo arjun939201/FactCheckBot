@@ -8,6 +8,6 @@ class ChatRequest(BaseModel):
 async def chat(req:ChatRequest):
     try:
         history="\n".join(f"{x.get('role','user')}: {x.get('content','')}" for x in req.history[-10:])
-        d=await grok_json(f"""Respond naturally to this ordinary chat request. Do not present unsupported claims as verified. Conversation:\n{history}\nUser: {req.message}\nReturn JSON {{\"reply\":\"string\"}}""")
+        d=await groq_json(f"""Respond naturally to this ordinary chat request. Do not present unsupported claims as verified. Conversation:\n{history}\nUser: {req.message}\nReturn JSON {{\"reply\":\"string\"}}""")
         return {"reply":d.get("reply","")}
     except Exception as e:raise HTTPException(502,"We couldn't complete this chat right now. Please try again.") from e
