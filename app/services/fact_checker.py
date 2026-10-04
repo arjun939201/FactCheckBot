@@ -1,11 +1,13 @@
+import json
 import asyncio
 from datetime import datetime,timezone
 from pydantic import ValidationError
 from ..models.factcheck import FactCheckResult,ArticleFactCheck,MediaAttachment
+from ..config import get_settings
 from .groq import groq_json,factcheck_instruction,decompose_claims
 from .search import search_web
 
-MAX_MEDIA_CONTEXT=16000
+MAX_MEDIA_CONTEXT=12000
 
 async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None)->FactCheckResult:
     media_contexts=media_contexts or [];media_text=[];attachments=[]
@@ -26,7 +28,23 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None)->Fac
             if item["url"] not in seen:seen.add(item["url"]);evidence.append(item)
     if not evidence:raise RuntimeError("Live web evidence retrieval returned no results")
     for i,item in enumerate(evidence,1):item["evidence_id"]=f"E{i:02d}"
-    data=await groq_json(factcheck_instruction(research_text,evidence,prefs,claims))
+    # Keep the LLM payload bounded while retaining the full evidence set for
+    # deterministic ID/source validation after the model responds.
+    evidence_for_model=[]
+    excerpt_limit=get_settings().groq_evidence_excerpt_chars
+    for item in evidence[:12]:
+        evidence_for_model.append({
+            "evidence_id":item["evidence_id"],
+            "title":item.get("title",""),
+            "publisher":item.get("publisher",""),
+            "url":item["url"],
+            "content":str(item.get("content",""))[:excerpt_limit],
+            "source_type":item.get("source_type","Other"),
+            "source_quality":item.get("source_quality",0),
+            "source_tier":item.get("source_tier","Other"),
+        })
+    model_research_text=research_text[:9000]
+    data=await groq_json(factcheck_instruction(model_research_text,evidence_for_model,prefs,claims))
     if not isinstance(data,dict):
         raise RuntimeError("The AI returned an invalid fact-check object")
 
@@ -78,13 +96,23 @@ async def run_url_fact_check(url:str,prefs:dict)->ArticleFactCheck:
     except ArticleFetchError as e:raise ValueError(str(e)) from e
     evidence=await search_web(title+" "+article[:3000])
     if not evidence:raise RuntimeError("Live web evidence retrieval returned no results")
-    prompt=f"""Article title: {title}
+    excerpt_limit=get_settings().groq_evidence_excerpt_chars
+    compact_evidence=[{
+        "evidence_id":x.get("evidence_id",""),
+        "title":x.get("title",""),
+        "publisher":x.get("publisher",""),
+        "url":x.get("url",""),
+        "content":str(x.get("content",""))[:excerpt_limit],
+        "source_quality":x.get("source_quality",0),
+        "source_tier":x.get("source_tier","Other"),
+    } for x in evidence[:12]]
+    prompt=f"""Article title: {title[:500]}
 Article URL: {url}
 Article text:
-{article}
+{article[:9000]}
 Identify important factual assertions and provide an article-level assessment. Use ONLY retrieved evidence. Return JSON with article_title, overall_verdict, overall_confidence, summary, claims_checked (claim, verdict, confidence, summary), sources, uncertainties, last_checked. Keep no more than 8 claims.
 Retrieved evidence:
-{evidence}"""
+{json.dumps(compact_evidence,ensure_ascii=False)}"""
     data=await groq_json(prompt)
     if not isinstance(data,dict):
         raise RuntimeError("The AI returned an invalid article fact-check object")

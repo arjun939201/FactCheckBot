@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     media_vision_retry_attempts: int = Field(default=2, ge=0, le=4)
     media_vision_retry_max_delay: float = Field(default=6.0, gt=0, le=30)
     max_request_bytes: int = Field(default=40 * 1024 * 1024, gt=1024, le=100 * 1024 * 1024)
+    groq_max_instruction_chars: int = Field(default=28000, gt=4000, le=60000)
+    groq_claim_input_chars: int = Field(default=9000, gt=1000, le=20000)
+    groq_evidence_excerpt_chars: int = Field(default=1400, gt=300, le=5000)
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 
     @property

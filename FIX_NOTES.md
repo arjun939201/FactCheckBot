@@ -1,4 +1,12 @@
-# Production Snapshot Notes
+# Fix Notes
+
+## Latest investigation
+
+Render logs showed `meta-llama/llama-prompt-guard-2-22m` being selected after the configured model returned 404. That model is not compatible with the application chat prompt. The provider selector is now allowlisted by generative model families and explicitly excludes guard/classifier/transcription/safety infrastructure models.
+
+The same logs showed Groq rejecting oversized prompts. The application now bounds claim input, research text, evidence excerpts, article text, and chat history before requests are sent.
+
+Production Snapshot Notes
 
 This snapshot includes the media evidence normalization fix and a broader production hardening pass.
 

@@ -15,73 +15,120 @@ _model_cache: tuple[float, set[str]] | None = None
 MODEL_CACHE_SECONDS = 300
 
 
+class GroqProviderError(RuntimeError):
+    """A provider-side failure that should not be confused with an app bug."""
+
+
+class GroqPayloadTooLargeError(GroqProviderError):
+    """The request is too large for the selected provider model."""
+
+
+def _is_text_generation_model(model: str) -> bool:
+    """Reject guard/classifier/transcription models from generic chat fallback."""
+    m=model.lower()
+    blocked=(
+        "prompt-guard", "guard", "safeguard", "moderation", "moderator",
+        "whisper", "distil-whisper", "tts", "text-to-speech", "embed",
+        "embedding", "rerank", "reranker", "speech-to-text",
+    )
+    if any(x in m for x in blocked):
+        return False
+    families=("gpt-oss", "llama-3", "llama-4", "qwen", "mixtral", "gemma")
+    return any(x in m for x in families)
+
+
+def _text_model_candidates(models: set[str]) -> list[str]:
+    def score(model: str) -> tuple[int, str]:
+        m=model.lower()
+        if "gpt-oss" in m: rank=0
+        elif "llama-3.3" in m: rank=1
+        elif "llama-3" in m: rank=2
+        elif "qwen" in m: rank=3
+        elif "llama-4" in m: rank=4
+        elif "mixtral" in m: rank=5
+        else: rank=6
+        return rank,m
+    return sorted((m for m in models if _is_text_generation_model(m)), key=score)
+
+
 async def _available_models() -> set[str]:
     global _model_cache
-    now = time.monotonic()
-    if _model_cache and now - _model_cache[0] < MODEL_CACHE_SECONDS:
+    now=time.monotonic()
+    if _model_cache and now-_model_cache[0] < MODEL_CACHE_SECONDS:
         return _model_cache[1]
-    s = get_settings()
-    async with httpx.AsyncClient(timeout=min(s.request_timeout, 15)) as c:
-        r = await c.get("https://api.groq.com/openai/v1/models", headers={"Authorization": f"Bearer {s.groq_api_key}"})
+    s=get_settings()
+    async with httpx.AsyncClient(timeout=min(s.request_timeout,15)) as c:
+        r=await c.get("https://api.groq.com/openai/v1/models",headers={"Authorization":f"Bearer {s.groq_api_key}"})
         r.raise_for_status()
-        data = r.json()
-    models = {str(x.get("id")) for x in data.get("data", []) if isinstance(x, dict) and x.get("id")}
-    _model_cache = (now, models)
+        data=r.json()
+    models={str(x.get("id")) for x in data.get("data",[]) if isinstance(x,dict) and x.get("id")}
+    _model_cache=(now,models)
     return models
 
 
+def _clip_instruction(instruction: str) -> str:
+    limit=get_settings().groq_max_instruction_chars
+    if len(instruction)<=limit:
+        return instruction
+    raise GroqPayloadTooLargeError(
+        f"The research request is too large for the AI analysis model. Reduce the amount of attached text or evidence (limit {limit} characters)."
+    )
+
+
 async def _request(model, instruction):
-    s = get_settings()
+    s=get_settings()
+    instruction=_clip_instruction(instruction)
     async with httpx.AsyncClient(timeout=s.request_timeout) as c:
-        r = await c.post(
+        r=await c.post(
             "https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": f"Bearer {s.groq_api_key}", "Content-Type": "application/json"},
-            json={"model": model, "temperature": 0.1, "messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": instruction}]},
+            headers={"Authorization":f"Bearer {s.groq_api_key}","Content-Type":"application/json"},
+            json={"model":model,"temperature":0.1,"messages":[{"role":"system","content":SYSTEM_PROMPT},{"role":"user","content":instruction}]},
         )
         if r.is_error:
-            logger.error("Groq request failed: status=%s model=%s body=%s", r.status_code, model, r.text[:1000])
+            logger.error("Groq request failed: status=%s model=%s body=%s",r.status_code,model,r.text[:1000])
+            if r.status_code==400 and "reduce the length" in r.text.lower():
+                raise GroqPayloadTooLargeError("Groq rejected the request because the prompt is too large.")
             r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"]
 
 
 async def groq_json(instruction):
-    s = get_settings()
+    s=get_settings()
     if not s.groq_api_key:
-        raise RuntimeError("Groq API is not configured")
-    candidates = []
-    for model in (s.groq_model, s.groq_fallback_model):
+        raise GroqProviderError("Groq API is not configured")
+    candidates=[]
+    for model in (s.groq_model,s.groq_fallback_model):
         if model and model not in candidates:
             candidates.append(model)
-    last_error = None
+    last_error=None
     for model in candidates:
         try:
-            content = await _request(model, instruction)
+            content=await _request(model,instruction)
             return _parse_json(content)
         except httpx.HTTPStatusError as e:
-            last_error = e
-            if e.response.status_code != 404:
+            last_error=e
+            if e.response.status_code!=404:
                 raise
-            logger.warning("Configured Groq model unavailable: %s", model)
-    # A 404 often means the deployment's model setting has gone stale. Discover
-    # currently exposed models once and retry with the first compatible candidate.
+            logger.warning("Configured Groq model unavailable: %s",model)
     try:
-        available = await _available_models()
+        available=await _available_models()
     except httpx.HTTPError as e:
         logger.exception("Groq model discovery failed")
-        raise RuntimeError("No configured Groq model is available and model discovery failed.") from e
-    preferred = [x for x in available if "gpt-oss" in x.lower() or "llama" in x.lower() or "qwen" in x.lower()]
-    for model in sorted(preferred):
+        raise GroqProviderError("No configured Groq model is available and model discovery failed.") from e
+    discovered=_text_model_candidates(available)
+    logger.info("Discovered compatible Groq text models: %s",discovered)
+    for model in discovered:
         if model in candidates:
             continue
         try:
-            logger.info("Retrying Groq request with discovered model=%s", model)
-            content = await _request(model, instruction)
+            logger.info("Retrying Groq request with discovered compatible model=%s",model)
+            content=await _request(model,instruction)
             return _parse_json(content)
         except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
+            if e.response.status_code==404:
                 continue
             raise
-    raise RuntimeError("No currently available Groq text model was found.") from last_error
+    raise GroqProviderError("No currently available Groq text-generation model was found.") from last_error
 
 
 def _parse_json(content: str):
@@ -95,7 +142,7 @@ def _parse_json(content: str):
 
 async def decompose_claims(text: str, prefs: dict) -> list[dict]:
     prompt = f"""Decompose this input into the smallest meaningful components that should be analyzed separately.
-Input: {text!r}
+Input: {text[:get_settings().groq_claim_input_chars]!r}
 Preferences: {json.dumps(prefs)}
 Return ONLY JSON: {{"claims":[{{"claim":"string","content_type":"FACTUAL CLAIM|ARGUMENT|OPINION|PROPAGANDA|PREDICTION|QUESTION|SATIRE/UNCLEAR|MIXED"}}]}}
 Rules: preserve the user's meaning; do not fact-check or assign truth; do not invent claims; combine only inseparable fragments; split multiple factual assertions and separate factual assertions from opinions or conclusions. Maximum 8 components."""

@@ -3,6 +3,7 @@ from fastapi import APIRouter,HTTPException,UploadFile,File,Form,Request,Respons
 from ..models.factcheck import FactCheckRequest,URLFactCheckRequest
 from ..services.fact_checker import run_fact_check,run_url_fact_check
 from ..services.media import extract_media,MediaCapabilityError,MediaRateLimitError,MediaCallBudget
+from ..services.groq import GroqPayloadTooLargeError,GroqProviderError
 from ..config import get_settings
 from .history import owner, store
 
@@ -21,6 +22,10 @@ async def _save(r,kind,title,owner_key):
 @router.post("/fact-check")
 async def fact_check(req:FactCheckRequest, request: Request, response: Response):
     try:r=await run_fact_check(req.text,prefs(req))
+    except GroqPayloadTooLargeError as e:
+        raise HTTPException(413,str(e)) from e
+    except GroqProviderError as e:
+        raise HTTPException(503,str(e)) from e
     except Exception as e:
         logger.exception("Fact-check failed",extra={"input_length":len(req.text)})
         raise HTTPException(502,"We couldn't complete this fact check right now. Please try again.") from e
@@ -47,6 +52,10 @@ async def media_fact_check(
         raise HTTPException(429,str(e),headers=headers) from e
     except MediaCapabilityError as e:
         raise HTTPException(503,str(e)) from e
+    except GroqPayloadTooLargeError as e:
+        raise HTTPException(413,str(e)) from e
+    except GroqProviderError as e:
+        raise HTTPException(503,str(e)) from e
     except Exception as e:
         logger.exception("Media fact-check failed",extra={"file_count":len(files),"input_length":len(text)})
         raise HTTPException(502,"We couldn't analyze the attachment(s) right now. Please try again.") from e
@@ -56,6 +65,8 @@ async def media_fact_check(
 async def url_fact_check(req:URLFactCheckRequest, request: Request, response: Response):
     try:r=await run_url_fact_check(str(req.url),prefs(req))
     except ValueError as e: raise HTTPException(400,str(e))
+    except GroqPayloadTooLargeError as e: raise HTTPException(413,str(e)) from e
+    except GroqProviderError as e: raise HTTPException(503,str(e)) from e
     except Exception as e:
         logger.exception("Article fact-check failed",extra={"url_host":req.url.host})
         raise HTTPException(502,"We couldn't complete this article fact check right now. Please try again.") from e

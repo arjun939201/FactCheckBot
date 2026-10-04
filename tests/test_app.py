@@ -50,7 +50,7 @@ def test_media_requires_text_or_file():
 
 def test_chat_failure_is_safe():
     r=client.post("/api/chat",json={"message":"hello"})
-    assert r.status_code in (200,502)
+    assert r.status_code in (200,502,503)
 
 
 @pytest.mark.asyncio
@@ -143,3 +143,35 @@ def test_media_rate_limit_is_not_generic_502(monkeypatch):
     r=client.post("/api/fact-check/media",files={"files":("x.jpg",b"x","image/jpeg")})
     assert r.status_code==429
     assert r.headers.get("retry-after")=="9"
+
+
+def test_text_model_discovery_excludes_guard_models():
+    from app.services.groq import _text_model_candidates
+    models={"meta-llama/llama-prompt-guard-2-22m","openai/gpt-oss-120b","llama-3.3-70b-versatile","whisper-large-v3-turbo"}
+    candidates=_text_model_candidates(models)
+    assert "meta-llama/llama-prompt-guard-2-22m" not in candidates
+    assert "whisper-large-v3-turbo" not in candidates
+    assert candidates[0] == "openai/gpt-oss-120b"
+
+
+def test_groq_payload_budget():
+    from app.services.groq import _clip_instruction,GroqPayloadTooLargeError
+    with pytest.raises(GroqPayloadTooLargeError):
+        _clip_instruction("x" * 28001)
+
+
+def test_media_route_maps_payload_too_large():
+    import app.routes.factcheck as route
+    async def fake_extract(file,budget):
+        from app.services.media import MediaContext
+        return MediaContext("x.jpg","image/jpeg",1,"image")
+    async def fake_run(*args,**kwargs):
+        raise route.GroqPayloadTooLargeError("too large")
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(route,"extract_media",fake_extract)
+    monkeypatch.setattr(route,"run_fact_check",fake_run)
+    try:
+        r=client.post("/api/fact-check/media",files={"files":("x.jpg",b"x","image/jpeg")})
+        assert r.status_code==413
+    finally:
+        monkeypatch.undo()

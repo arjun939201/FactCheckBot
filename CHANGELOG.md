@@ -1,6 +1,15 @@
 # Changelog
 
-## Production snapshot — 2026-10-04
+## 2026-10-04 — Provider hardening
+
+- Prevented Guard/classifier/Whisper models from being selected as generic text models.
+- Added bounded Groq instruction budgets.
+- Compacted evidence/article payloads before LLM analysis.
+- Added explicit provider payload/availability error mapping.
+- Preserved media 429 backoff and Retry-After handling.
+- Added regression tests for model selection and payload limits.
+
+Production snapshot — 2026-10-04
 
 ### Fixed
 - Prevented malformed Groq evidence arrays from causing `AttributeError: 'str' object has no attribute 'get'`.
