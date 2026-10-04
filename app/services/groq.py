@@ -39,9 +39,11 @@ Rules: preserve the user's meaning; do not fact-check or assign truth; do not in
     data=await groq_json(prompt);items=data.get("claims",[])
     return [x for x in items if isinstance(x,dict) and str(x.get("claim","")).strip()][:8]
 
-def factcheck_instruction(claim,evidence,prefs):
+def factcheck_instruction(claim,evidence,prefs,claim_units):
     return f"""Fact-check this input: {claim!r}
 Preferences: {json.dumps(prefs)}
+Decomposed claim units (research was performed separately for each):
+{json.dumps(claim_units,ensure_ascii=False)}
 Retrieved evidence (ONLY permitted external evidence):
 {json.dumps(evidence,ensure_ascii=False)}
 For each decomposed component, return claims_checked with exact evidence IDs from the supplied evidence. Do not invent IDs. Use supporting_evidence_ids and contradicting_evidence_ids to map evidence to that claim. source_quality must reflect the retrieved source quality (0-100), and corroboration_count is the number of distinct retrieved sources that independently support the assessment. For ARGUMENT, analyze premises, conclusion, reasoning gaps and evidence. For OPINION, analyze the viewpoint without pretending a subjective preference can be objectively proven. For PROPAGANDA, identify concrete persuasive techniques only when actually present; political content is not automatically propaganda. For FACTUAL CLAIM, assess verifiable assertions. For QUESTION, explain what would need to be established. For MIXED, separate components.
