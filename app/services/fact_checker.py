@@ -26,7 +26,7 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None)->Fac
             if item["url"] not in seen:seen.add(item["url"]);evidence.append(item)
     if not evidence:raise RuntimeError("Live web evidence retrieval returned no results")
     for i,item in enumerate(evidence,1):item["evidence_id"]=f"E{i:02d}"
-    data=await groq_json(factcheck_instruction(research_text,evidence,prefs))
+    data=await groq_json(factcheck_instruction(research_text,evidence,prefs,claims))
     known={x["url"] for x in evidence};by_id={x["evidence_id"]:x for x in evidence}
     for k in ("sources","supporting_evidence","contradicting_evidence"):
         data[k]=[x for x in data.get(k,[]) if x.get("url") in known]
