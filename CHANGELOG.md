@@ -39,3 +39,12 @@ Production snapshot — 2026-10-04
 - Added configurable multimodal retry count and maximum retry delay.
 - Video visual analysis can degrade to audio analysis when visual capability is unavailable.
 - Added regression coverage for provider rate limiting.
+
+## 2026-10-04 — relevance and UX optimization
+- Added deterministic search relevance filtering and source diversity controls.
+- Prevented weak/irrelevant search results from being mapped into final evidence.
+- Added evidence relevance metadata and compact source-retention reasons.
+- Reduced redundant search query expansion.
+- Simplified research and result micro-copy.
+- Added removable media chips and drag-and-drop uploads.
+- Reduced landing-page visual density.

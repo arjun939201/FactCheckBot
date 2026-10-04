@@ -174,7 +174,7 @@ Preferences: {json.dumps(prefs)}
 Primary claim units:
 {json.dumps(claim_units, ensure_ascii=False)}
 {media_section}
-Retrieved evidence (ONLY permitted external evidence):
+Retrieved evidence (ONLY permitted external evidence). Prefer evidence with higher relevance_score; ignore items whose relevance_score is low or whose relevance_reason shows only incidental keyword overlap:
 {json.dumps(evidence, ensure_ascii=False)}
 {subject_rule}
 Return ONE coherent report. claims_checked must correspond only to the primary claim units and should normally contain one assessment when the user supplied one substantive claim. Use exact evidence IDs only. Never invent IDs, sources, quotations, dates, or facts. If evidence is insufficient, use UNVERIFIED. Do not write a report about questions that the user did not ask.

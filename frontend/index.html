@@ -26,15 +26,15 @@
   <main>
     <section id="fact" class="view active">
       <div class="hero">
-        <div class="eyebrow">EVIDENCE-FIRST RESEARCH</div>
-        <h1>Don't just ask if it's true.<br><em>Show me why.</em></h1>
-        <p>Investigate claims with live sources, claim-level evidence, contradiction checks, and transparent uncertainty.</p>
+        <div class="eyebrow">EVIDENCE-FIRST</div>
+        <h1>Check the claim.<br><em>See the evidence.</em></h1>
+        <p>Live sources. Claim-level findings. Clear uncertainty.</p>
       </div>
 
       <div class="workspace card">
         <div class="mode-row">
           <div class="segmented" role="tablist">
-            <button id="claimTab" class="seg active" role="tab">Claim / media</button>
+            <button id="claimTab" class="seg active" role="tab">Claim + media</button>
             <button id="urlTab" class="seg" role="tab">Article URL</button>
           </div>
           <label class="compact-control">Analysis
@@ -42,18 +42,18 @@
           </label>
         </div>
         <div class="composer">
-          <textarea id="input" maxlength="12000" placeholder="Paste a claim, social post, quote, statistic, or question…" aria-label="Content to fact-check"></textarea>
+          <textarea id="input" maxlength="12000" placeholder="Paste a claim, quote, post, or statistic…" aria-label="Content to fact-check"></textarea>
           <div class="composer-footer">
             <div class="attachment-zone" id="mediaBox">
               <label for="mediaInput" class="attach-btn">＋ Add evidence media</label>
               <input id="mediaInput" type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif,audio/mpeg,audio/wav,audio/mp4,audio/ogg,audio/webm,video/mp4,video/webm,video/quicktime,video/mpeg">
-              <div id="mediaList" class="file-list">Images, audio and video · up to 5 files</div>
+              <div id="mediaList" class="file-list">Add image, audio, or video · up to 5</div>
             </div>
             <div class="char-count"><span id="charCount">0</span>/12,000</div>
           </div>
         </div>
         <div class="research-options">
-          <button id="advancedToggle" class="link-btn" aria-expanded="false">Research preferences <span>⌄</span></button>
+          <button id="advancedToggle" class="link-btn" aria-expanded="false">Options <span>⌄</span></button>
           <div id="advanced" class="advanced hidden">
             <label>Detail<select id="detail"><option>quick</option><option selected>standard</option><option>detailed</option></select></label>
             <label>Audience<select id="audience"><option>general</option><option>student</option><option>professional</option><option>research</option></select></label>
@@ -64,11 +64,11 @@
         </div>
         <div class="action-row">
           <div id="status" class="run-status" aria-live="polite"></div>
-          <button id="check" class="primary big">Start investigation <span>→</span></button>
-          <button id="analyze" class="primary big hide">Investigate article <span>→</span></button>
+          <button id="check" class="primary big">Check claim <span>→</span></button>
+          <button id="analyze" class="primary big hide">Check article <span>→</span></button>
         </div>
       </div>
-      <div class="trust-row"><span>LIVE WEB RESEARCH</span><span>CLAIM-LEVEL MAPPING</span><span>SOURCE TRACEABILITY</span><span>UNCERTAINTY-AWARE</span></div>
+      <div class="trust-row"><span>LIVE SOURCES</span><span>CLAIM MAPPING</span><span>SOURCE TRACEABILITY</span><span>UNCERTAINTY-AWARE</span></div>
       <div id="result" aria-live="polite"></div>
     </section>
 
@@ -85,9 +85,9 @@
     <section id="settings" class="view">
       <div class="page-head"><div class="eyebrow">CONTROL CENTER</div><h2>Research settings.</h2><p>Preferences stay in this browser and are applied to new investigations.</p></div>
       <div class="settings-grid">
-        <div class="card setting-card"><h3>Analysis</h3><label>Response detail<select id="detail2"><option>quick</option><option selected>standard</option><option>detailed</option></select></label><label>Audience<select id="audience2"><option>general</option><option>student</option><option>professional</option><option>research</option></select></label></div>
-        <div class="card setting-card"><h3>Evidence</h3><label>Source preference<select id="sourcePref2"><option value="any">Any reliable source</option><option value="official">Government / official</option><option value="academic">Academic / scientific</option><option value="news">Major news</option><option value="factcheck">Fact-checking organizations</option></select></label><label>Region<select id="region2"><option>global</option><option>India</option><option>United States</option><option>United Kingdom</option></select></label></div>
-        <div class="card setting-card"><h3>Language</h3><label>Output language<select id="language2"><option>English</option><option>Hindi</option><option>Telugu</option></select></label><div class="info-note">The research engine prioritizes retrieved evidence over model memory.</div></div>
+        <div class="card setting-card"><h3>Mode</h3><label>Detail<select id="detail2"><option>quick</option><option selected>standard</option><option>detailed</option></select></label><label>Audience<select id="audience2"><option>general</option><option>student</option><option>professional</option><option>research</option></select></label></div>
+        <div class="card setting-card"><h3>Evidence</h3><label>Sources<select id="sourcePref2"><option value="any">Any reliable source</option><option value="official">Government / official</option><option value="academic">Academic / scientific</option><option value="news">Major news</option><option value="factcheck">Fact-checking organizations</option></select></label><label>Region<select id="region2"><option>global</option><option>India</option><option>United States</option><option>United Kingdom</option></select></label></div>
+        <div class="card setting-card"><h3>Language</h3><label>Language<select id="language2"><option>English</option><option>Hindi</option><option>Telugu</option></select></label><div class="info-note">The research engine prioritizes retrieved evidence over model memory.</div></div>
       </div>
     </section>
   </main>

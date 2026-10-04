@@ -216,3 +216,40 @@ async def test_media_only_can_generate_substantive_claims(monkeypatch):
     from app.services.media import MediaContext
     result=await fc.run_fact_check("", {"content_mode":"auto"}, [MediaContext("image.jpg","image/jpeg",10,"image","MODI IS AN ILLEGAL PM","political image")], media_only=True)
     assert len(result.claims_checked)==1
+
+
+def test_search_relevance_rejects_unrelated_acronym_hits():
+    from app.services.search import _relevance
+    unrelated={"title":"California Commission on Judicial Performance","publisher":"ccjp.ca.gov","content":"Judicial discipline and court performance."}
+    relevant={"title":"Congress and Modi youth politics in India","publisher":"example.in","content":"Congress and Modi are discussed in Indian political reporting."}
+    assert _relevance("CJP and Congress are driving youth against Modi", unrelated) < 50
+    assert unrelated["relevant"] is False
+    assert _relevance("CJP and Congress are driving youth against Modi", relevant) > 0
+    assert relevant["relevant"] is True
+
+
+@pytest.mark.asyncio
+async def test_fact_checker_never_maps_weak_search_results(monkeypatch):
+    import app.services.fact_checker as fc
+    async def fake_decompose(text,prefs,media_only=False):
+        return [{"claim":text,"content_type":"FACTUAL CLAIM"}]
+    async def fake_search(claim):
+        return [{"url":"https://bad.example","title":"Unrelated","publisher":"bad.example","content":"Nothing relevant","source_type":"Other","source_quality":60,"source_tier":"Other","relevant":False,"relevance_score":0,"relevance_reason":"0/5 key terms match"}]
+    async def fake_groq(instruction):
+        return {"claim":"Test claim","verdict":"TRUE","confidence":90,"summary":"Looks supported","reasoning":"Model tried to map weak evidence.","supporting_evidence":["https://bad.example"],"contradicting_evidence":[],"sources":["https://bad.example"],"claims_checked":[{"claim":"Test claim","content_type":"FACTUAL CLAIM","verdict":"TRUE","confidence":90,"summary":"Looks supported","supporting_evidence_ids":["E01"],"contradicting_evidence_ids":[],"source_quality":60,"corroboration_count":1,"reasoning":"Weak","what_would_change_conclusion":"Relevant evidence."}]}
+    monkeypatch.setattr(fc,"decompose_claims",fake_decompose);monkeypatch.setattr(fc,"search_web",fake_search);monkeypatch.setattr(fc,"groq_json",fake_groq)
+    result=await fc.run_fact_check("Test claim",{"content_mode":"auto"})
+    assert result.sources==[]
+    assert result.supporting_evidence==[]
+    assert result.verdict.value=="UNVERIFIED"
+
+
+def test_frontend_microcopy_and_upload_ux():
+    from pathlib import Path
+    html=Path("frontend/index.html").read_text()
+    js=Path("frontend/app.js").read_text()
+    assert "Check the claim." in html
+    assert "See the evidence." in html
+    assert "Claim + media" in html
+    assert "removeFile" in js
+    assert "dataTransfer.files" in js

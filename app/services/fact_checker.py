@@ -65,6 +65,8 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
             "source_type":item.get("source_type","Other"),
             "source_quality":item.get("source_quality",0),
             "source_tier":item.get("source_tier","Other"),
+            "relevance_score":item.get("relevance_score",0),
+            "relevance_reason":item.get("relevance_reason",""),
         })
 
     media_context="\n\n".join(media_blocks)[:MAX_MEDIA_CONTEXT]
@@ -83,7 +85,9 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
         x["source_tier"]=str(x.get("source_tier","Other"))
         try:x["source_quality"]=max(0,min(100,int(x.get("source_quality",0))))
         except (TypeError,ValueError):x["source_quality"]=0
-    known={x["url"] for x in evidence};by_id={x["evidence_id"]:x for x in evidence}
+    strong_evidence=[x for x in evidence if x.get("relevant",True)]
+    allowed_evidence=strong_evidence or []
+    known={x["url"] for x in allowed_evidence};by_id={x["evidence_id"]:x for x in allowed_evidence}
     for k in ("sources","supporting_evidence","contradicting_evidence"):
         data[k]=[x for x in _object_list(data.get(k,[])) if x.get("url") in known]
 
@@ -128,12 +132,12 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
     mapped_support=[];mapped_contra=[]
     for c in data["claims_checked"]:
         for eid in c["supporting_evidence_ids"]:
-            x=by_id[eid];mapped_support.append({"evidence_id":eid,"claim":c["claim"],"excerpt":x["content"],"url":x["url"],"title":x["title"],"publisher":x["publisher"],"source_type":x["source_type"],"source_quality":x["source_quality"],"source_tier":x["source_tier"]})
+            x=by_id[eid];mapped_support.append({"evidence_id":eid,"claim":c["claim"],"excerpt":x["content"],"url":x["url"],"title":x["title"],"publisher":x["publisher"],"source_type":x["source_type"],"source_quality":x["source_quality"],"source_tier":x["source_tier"],"relevance_score":x.get("relevance_score",0),"relevance_reason":x.get("relevance_reason","")})
         for eid in c["contradicting_evidence_ids"]:
-            x=by_id[eid];mapped_contra.append({"evidence_id":eid,"claim":c["claim"],"excerpt":x["content"],"url":x["url"],"title":x["title"],"publisher":x["publisher"],"source_type":x["source_type"],"source_quality":x["source_quality"],"source_tier":x["source_tier"]})
+            x=by_id[eid];mapped_contra.append({"evidence_id":eid,"claim":c["claim"],"excerpt":x["content"],"url":x["url"],"title":x["title"],"publisher":x["publisher"],"source_type":x["source_type"],"source_quality":x["source_quality"],"source_tier":x["source_tier"],"relevance_score":x.get("relevance_score",0),"relevance_reason":x.get("relevance_reason","")})
     data["supporting_evidence"]=mapped_support;data["contradicting_evidence"]=mapped_contra
     used={x["url"] for x in mapped_support+mapped_contra}
-    data["sources"]=[{"title":x["title"],"publisher":x["publisher"],"url":x["url"],"source_type":x["source_type"],"source_quality":x["source_quality"],"source_tier":x["source_tier"],"corroboration_count":sum(1 for y in evidence if y["publisher"]==x["publisher"])} for x in evidence if x["url"] in used][:12]
+    data["sources"]=[{"title":x["title"],"publisher":x["publisher"],"url":x["url"],"source_type":x["source_type"],"source_quality":x["source_quality"],"source_tier":x["source_tier"],"corroboration_count":sum(1 for y in allowed_evidence if y["publisher"]==x["publisher"]),"relevance_score":x.get("relevance_score",0),"relevance_reason":x.get("relevance_reason","")} for x in evidence if x["url"] in used][:12]
     data["live_evidence_available"]=bool(evidence)
     # The user supplied text is the canonical subject of the report. Never let
     # media-derived wording replace the primary investigation title/claim.
