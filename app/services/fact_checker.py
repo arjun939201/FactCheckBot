@@ -2,7 +2,7 @@ from datetime import datetime,timezone
 from pydantic import ValidationError
 from ..config import get_settings
 from ..models.factcheck import FactCheckResult,ArticleFactCheck
-from .grok import groq_json,factcheck_instruction
+from .groq import groq_json,factcheck_instruction
 from .search import search_web,SearchError
 async def run_fact_check(text:str,prefs:dict)->FactCheckResult:
     evidence=[]; live=bool(get_settings().search_api_key)
