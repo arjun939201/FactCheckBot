@@ -36,3 +36,6 @@ Fact Check is designed as an evidence-first research product rather than a binar
 
 ## Remaining platform-level work
 This repository is production-oriented, but a genuinely world-scale service would still need managed rate limiting/queues, distributed caching, durable object storage, authentication/accounts, observability/metrics/tracing, source connector credentials, browser automation where permitted, asynchronous research jobs, abuse prevention, and a larger integration/test matrix.
+
+### Provider resilience
+Multimodal provider failures are classified separately from application failures. HTTP 404 means a model is unavailable and may trigger capability discovery; HTTP 429 means the provider is throttling and never triggers model switching. Retries are bounded, `Retry-After` is propagated, and each investigation has a configurable multimodal-call budget.

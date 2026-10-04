@@ -21,3 +21,12 @@
 - Python compilation: passed.
 - Test suite: 12 passed.
 - Render/Groq/live-search production behavior remains environment-dependent and must be smoke-tested after deployment.
+
+## 2026-10-04 — Media provider resilience
+- Added bounded Groq multimodal retry/backoff handling.
+- Honors provider `Retry-After` values and stops model switching on HTTP 429.
+- Returns HTTP 429 for upstream media throttling with a retry hint.
+- Added configurable per-request vision-call budget.
+- Added configurable multimodal retry count and maximum retry delay.
+- Video visual analysis can degrade to audio analysis when visual capability is unavailable.
+- Added regression coverage for provider rate limiting.

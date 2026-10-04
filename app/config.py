@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_env: str = "development"
     app_name: str = "Fact Check"
-    app_version: str = "1.1.0"
+    app_version: str = "1.2.0"
     groq_api_key: str | None = None
     # Keep the known-good current fallback as the default primary so a stale
     # retired model does not cause every request to pay for a failed retry.
@@ -24,6 +24,9 @@ class Settings(BaseSettings):
     search_timeout: float = Field(default=10.0, gt=0, le=60)
     max_search_results: int = Field(default=12, gt=1, le=30)
     rate_limit_per_minute: int = Field(default=20, gt=1, le=120)
+    media_vision_calls_per_request: int = Field(default=6, gt=0, le=20)
+    media_vision_retry_attempts: int = Field(default=2, ge=0, le=4)
+    media_vision_retry_max_delay: float = Field(default=6.0, gt=0, le=30)
     max_request_bytes: int = Field(default=40 * 1024 * 1024, gt=1024, le=100 * 1024 * 1024)
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 

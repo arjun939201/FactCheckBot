@@ -104,3 +104,42 @@ async def test_run_fact_check_normalizes_string_evidence(monkeypatch):
     assert result.verdict.value == "TRUE"
     assert str(result.sources[0].url) == "https://example.com/evidence"
     assert result.claims_checked[0].supporting_evidence_ids == ["E01"]
+
+
+@pytest.mark.asyncio
+async def test_vision_429_retries_then_raises_rate_limit(monkeypatch):
+    import app.services.media as media
+
+    class FakeResponse:
+        status_code=429
+        headers={"Retry-After":"0"}
+        request=object()
+        def raise_for_status(self):
+            raise AssertionError("429 response should be handled before raise_for_status")
+
+    class FakeClient:
+        calls=0
+        async def __aenter__(self): return self
+        async def __aexit__(self,*args): pass
+        async def post(self,*args,**kwargs):
+            self.calls+=1
+            return FakeResponse()
+
+    fake=FakeClient()
+    monkeypatch.setattr(media.httpx,"AsyncClient",lambda *a,**k: fake)
+    monkeypatch.setattr(media,"get_settings",lambda: type("S",(),{"groq_api_key":"test-key","request_timeout":1.0,"media_vision_retry_attempts":2,"media_vision_retry_max_delay":6.0,"media_vision_calls_per_request":6})())
+    async def no_sleep(delay): pass
+    monkeypatch.setattr(media.asyncio,"sleep",no_sleep)
+    with pytest.raises(media.MediaRateLimitError):
+        await media._call_vision_model("vision-model",b"x","image/jpeg","{}")
+    assert fake.calls==3
+
+
+def test_media_rate_limit_is_not_generic_502(monkeypatch):
+    import app.routes.factcheck as route
+    async def fake_extract(file,budget):
+        raise route.MediaRateLimitError("provider throttled",retry_after=9)
+    monkeypatch.setattr(route,"extract_media",fake_extract)
+    r=client.post("/api/fact-check/media",files={"files":("x.jpg",b"x","image/jpeg")})
+    assert r.status_code==429
+    assert r.headers.get("retry-after")=="9"

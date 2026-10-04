@@ -2,7 +2,8 @@ import logging
 from fastapi import APIRouter,HTTPException,UploadFile,File,Form,Request,Response
 from ..models.factcheck import FactCheckRequest,URLFactCheckRequest
 from ..services.fact_checker import run_fact_check,run_url_fact_check
-from ..services.media import extract_media
+from ..services.media import extract_media,MediaCapabilityError,MediaRateLimitError,MediaCallBudget
+from ..config import get_settings
 from .history import owner, store
 
 logger=logging.getLogger(__name__)
@@ -35,11 +36,17 @@ async def media_fact_check(
     if not text.strip() and not files: raise HTTPException(400,"Add claim text or at least one attachment.")
     if len(files)>5: raise HTTPException(400,"You can attach up to 5 files per fact check.")
     try:
-        contexts=[await extract_media(file) for file in files]
+        budget=MediaCallBudget(get_settings().media_vision_calls_per_request)
+        contexts=[await extract_media(file,budget) for file in files]
         seed=text.strip() or "Analyze the attached media and identify the claims that require verification."
         validated=FactCheckRequest(text=seed,content_mode=content_mode,detail=detail,audience=audience,source_preference=source_preference,region=region,language=language)
         r=await run_fact_check(validated.text,prefs(validated),contexts)
     except ValueError as e: raise HTTPException(400,str(e)) from e
+    except MediaRateLimitError as e:
+        headers={"Retry-After":str(max(1,int(e.retry_after or 5)))}
+        raise HTTPException(429,str(e),headers=headers) from e
+    except MediaCapabilityError as e:
+        raise HTTPException(503,str(e)) from e
     except Exception as e:
         logger.exception("Media fact-check failed",extra={"file_count":len(files),"input_length":len(text)})
         raise HTTPException(502,"We couldn't analyze the attachment(s) right now. Please try again.") from e

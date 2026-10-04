@@ -1,4 +1,4 @@
-import base64,io,json,os,subprocess,tempfile,logging,time
+import asyncio,base64,io,json,os,subprocess,tempfile,logging,time
 from dataclasses import dataclass
 import httpx
 from PIL import Image
@@ -18,6 +18,22 @@ _vision_cache:tuple[float,list[str]]=(0.0,[])
 
 class MediaCapabilityError(RuntimeError):
     """Raised when the configured provider cannot process a media type."""
+
+class MediaRateLimitError(RuntimeError):
+    """Raised when the upstream multimodal provider is throttling requests."""
+    def __init__(self,message:str,retry_after:float|None=None):
+        super().__init__(message)
+        self.retry_after=retry_after
+
+@dataclass
+class MediaCallBudget:
+    remaining:int|None=None
+
+    def consume(self)->None:
+        if self.remaining is not None and self.remaining <= 0:
+            raise MediaCapabilityError("This investigation reached its media-analysis limit. Reduce the number of attachments or frames and try again.")
+        if self.remaining is not None:
+            self.remaining -= 1
 
 @dataclass
 class MediaContext:
@@ -86,25 +102,49 @@ async def _discover_vision_models(force=False):
 
 async def _call_vision_model(model,data,media_type,prompt):
     s=get_settings()
-    async with httpx.AsyncClient(timeout=s.request_timeout) as c:
-        r=await c.post("https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization":"Bearer "+s.groq_api_key,"Content-Type":"application/json"},
-            json={"model":model,"temperature":0.1,"messages":[{"role":"user","content":[
-                {"type":"text","text":prompt},
-                {"type":"image_url","image_url":{"url":_data_url(data,media_type)}}
-            ]}]})
+    max_retries=s.media_vision_retry_attempts
+    base_delay=1.0
+    max_delay=s.media_vision_retry_max_delay
+    last_429=None
+    for attempt in range(max_retries+1):
+        async with httpx.AsyncClient(timeout=s.request_timeout) as c:
+            r=await c.post("https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization":"Bearer "+s.groq_api_key,"Content-Type":"application/json"},
+                json={"model":model,"temperature":0.1,"messages":[{"role":"user","content":[
+                    {"type":"text","text":prompt},
+                    {"type":"image_url","image_url":{"url":_data_url(data,media_type)}}
+                ]}]})
+        if r.status_code==429:
+            retry_header=r.headers.get("Retry-After")
+            try:
+                requested_delay=float(retry_header) if retry_header else base_delay*(2**attempt)
+            except ValueError:
+                requested_delay=base_delay*(2**attempt)
+            requested_delay=max(0.0,requested_delay)
+            last_429=r
+            logger.warning("Groq vision rate limited: model=%s attempt=%s retry_after=%.2fs",model,attempt+1,requested_delay)
+            if attempt < max_retries and requested_delay <= max_delay:
+                await asyncio.sleep(requested_delay)
+                continue
+            raise MediaRateLimitError(
+                "Groq image analysis is temporarily rate-limited. Please wait and try again.",
+                retry_after=requested_delay,
+            )
         if r.status_code==404:
             raise httpx.HTTPStatusError("Groq vision model unavailable",request=r.request,response=r)
         r.raise_for_status()
         body=r.json()
         content=body["choices"][0]["message"]["content"].strip()
-    fence=chr(96)*3
-    if content.startswith(fence): content=content.split("\n",1)[-1].rsplit(fence,1)[0].strip()
-    return json.loads(content)
+        fence=chr(96)*3
+        if content.startswith(fence): content=content.split("\n",1)[-1].rsplit(fence,1)[0].strip()
+        return json.loads(content)
+    raise MediaRateLimitError("Groq image analysis is temporarily rate-limited. Please wait and try again.") from last_429
 
-async def _vision(data,media_type):
+async def _vision(data,media_type,budget:MediaCallBudget|None=None):
     s=get_settings()
     if not s.groq_api_key: raise MediaCapabilityError("Groq API is not configured for image analysis.")
+    budget=budget or MediaCallBudget(s.media_vision_calls_per_request)
+    budget.consume()
     prompt='''Analyze this uploaded image for a fact-checking system. Return JSON only:
 {"visible_text":"readable text","visual_summary":"objective visual description","claims_or_context":["verifiable claims suggested by the image"],"uncertainties":["things not established by the image"]}
 Do not infer identity, intent, authenticity, location, date, or events unless directly visible.'''
@@ -171,15 +211,17 @@ def _audio(data,suffix):
         subprocess.run([_ffmpeg(),"-y","-i",src,"-vn","-ac","1","-ar","16000","-b:a","64k",out],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,check=False,timeout=45)
         return (open(out,"rb").read(),"audio/mpeg") if os.path.exists(out) else (None,"audio/mpeg")
 
-async def extract_media(file:UploadFile)->MediaContext:
+async def extract_media(file:UploadFile,budget:MediaCallBudget|None=None)->MediaContext:
     mt=(file.content_type or "").lower(); name=file.filename or "attachment"
+    s=get_settings()
+    budget=budget or MediaCallBudget(s.media_vision_calls_per_request)
     if mt in IMAGES:
         data=await _read(file,MAX_IMAGE)
         try:
             im=Image.open(io.BytesIO(data)); im.thumbnail((1600,1600))
             buf=io.BytesIO(); im.convert("RGB").save(buf,format="JPEG",quality=85,optimize=True); data=buf.getvalue()
         except Exception as e: raise ValueError("The uploaded image could not be decoded.") from e
-        x=await _vision(data,"image/jpeg")
+        x=await _vision(data,"image/jpeg",budget)
         extra="\n".join(x.get("claims_or_context",[])+x.get("uncertainties",[]))
         return MediaContext(name,mt,len(data),"image",x.get("visible_text",""),x.get("visual_summary","")+("\n"+extra if extra else ""))
     if mt in AUDIOS:
@@ -189,8 +231,11 @@ async def extract_media(file:UploadFile)->MediaContext:
         data=await _read(file,MAX_VIDEO); suffix=os.path.splitext(name)[1] or ".mp4"; desc=[]
         for frame in _frames(data,suffix):
             try:
-                x=await _vision(frame,"image/jpeg"); desc.append(x.get("visual_summary",""))
+                x=await _vision(frame,"image/jpeg",budget); desc.append(x.get("visual_summary",""))
                 if x.get("visible_text"): desc.append("Visible text: "+x["visible_text"])
+            except MediaRateLimitError:
+                logger.warning("Video visual analysis rate-limited; continuing with audio transcription")
+                break
             except MediaCapabilityError:
                 logger.warning("Video visual analysis unavailable; continuing with audio transcription")
                 break
