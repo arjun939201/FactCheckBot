@@ -1,18 +1,27 @@
 from datetime import datetime,timezone
 from pydantic import ValidationError
-from ..models.factcheck import FactCheckResult,ArticleFactCheck
+from ..models.factcheck import FactCheckResult,ArticleFactCheck,MediaAttachment
 from .groq import groq_json,factcheck_instruction
-from .search import search_web,SearchError
-async def run_fact_check(text:str,prefs:dict)->FactCheckResult:
-    evidence=await search_web(text)
-    live=bool(evidence)
-    data=await groq_json(factcheck_instruction(text,evidence,prefs))
+from .search import search_web
+
+async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None)->FactCheckResult:
+    media_contexts=media_contexts or []
+    media_text=[]
+    attachments=[]
+    for m in media_contexts:
+        if m.extracted_text: media_text.append("["+m.kind+" transcript/OCR from "+m.filename+"]\n"+m.extracted_text)
+        if m.visual_summary: media_text.append("["+m.kind+" visual context from "+m.filename+"]\n"+m.visual_summary)
+        attachments.append(MediaAttachment(filename=m.filename,media_type=m.media_type,kind=m.kind,size_bytes=m.size_bytes,extracted_text=m.extracted_text,visual_summary=m.visual_summary))
+    research_text=text.strip()
+    if media_text: research_text += "\n\nMEDIA-DERIVED CONTENT:\n" + "\n\n".join(media_text)
+    evidence=await search_web(research_text)
+    data=await groq_json(factcheck_instruction(research_text,evidence,prefs))
     known={x["url"] for x in evidence}
     for k in ("sources","supporting_evidence","contradicting_evidence"):
         data[k]=[x for x in data.get(k,[]) if x.get("url") in known]
-    data["live_evidence_available"]=live
-    if not live:
-        raise RuntimeError("Live web evidence retrieval returned no results")
+    data["live_evidence_available"]=bool(evidence)
+    data["attachments"]=[x.model_dump(mode="json") for x in attachments]
+    if not evidence: raise RuntimeError("Live web evidence retrieval returned no results")
     if not data.get("sources") and data.get("verdict") not in {"OPINION","PREDICTION"}:
         data["verdict"]="UNVERIFIED";data["confidence"]=min(int(data.get("confidence",0)),50)
         data.setdefault("uncertainties",[]).append("Insufficient reliable evidence was found to independently verify this claim.")
@@ -25,7 +34,7 @@ async def run_url_fact_check(url:str,prefs:dict)->ArticleFactCheck:
     try:title,article=await fetch_article(url)
     except ArticleFetchError as e:raise ValueError(str(e)) from e
     evidence=await search_web(title+" "+article[:3000])
-    live=bool(evidence)
+    if not evidence: raise RuntimeError("Live web evidence retrieval returned no results")
     prompt=f"""Article title: {title}
 Article URL: {url}
 Article text:
@@ -35,10 +44,6 @@ Retrieved evidence:
 {evidence}"""
     data=await groq_json(prompt)
     known={x["url"] for x in evidence}
-    data["article_url"]=url
-    data["sources"]=[x for x in data.get("sources",[]) if x.get("url") in known]
-    data["live_evidence_available"]=live
-    if not live:
-        raise RuntimeError("Live web evidence retrieval returned no results")
-    data["last_checked"]=datetime.now(timezone.utc).isoformat()
+    data["article_url"]=url; data["sources"]=[x for x in data.get("sources",[]) if x.get("url") in known]
+    data["live_evidence_available"]=True; data["last_checked"]=datetime.now(timezone.utc).isoformat()
     return ArticleFactCheck.model_validate(data)
