@@ -7,4 +7,7 @@ beautifulsoup4>=4.12,<5
 python-dotenv>=1.0,<2
 psycopg[binary]>=3.2,<4
 ddgs>=9,<10
+python-multipart>=0.0.9,<1
+Pillow>=10,<13
+imageio-ffmpeg>=0.5,<1
 pytest>=8,<9
