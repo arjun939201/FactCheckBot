@@ -12,5 +12,7 @@ services:
         sync: false
       - key: GROQ_MODEL
         value: llama-3.3-70b-versatile
+      - key: GROQ_FALLBACK_MODEL
+        value: openai/gpt-oss-120b
       - key: DATABASE_URL
         sync: false
