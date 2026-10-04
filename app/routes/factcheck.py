@@ -45,7 +45,7 @@ async def media_fact_check(
         contexts=[await extract_media(file,budget) for file in files]
         seed=text.strip() or "Analyze the attached media and identify the claims that require verification."
         validated=FactCheckRequest(text=seed,content_mode=content_mode,detail=detail,audience=audience,source_preference=source_preference,region=region,language=language)
-        r=await run_fact_check(validated.text,prefs(validated),contexts)
+        r=await run_fact_check(validated.text,prefs(validated),contexts,media_only=not text.strip())
     except ValueError as e: raise HTTPException(400,str(e)) from e
     except MediaRateLimitError as e:
         headers={"Retry-After":str(max(1,int(e.retry_after or 5)))}

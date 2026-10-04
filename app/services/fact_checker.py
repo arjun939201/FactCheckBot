@@ -9,62 +9,101 @@ from .search import search_web
 
 MAX_MEDIA_CONTEXT=12000
 
-async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None)->FactCheckResult:
-    media_contexts=media_contexts or [];media_text=[];attachments=[]
+async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media_only:bool=False)->FactCheckResult:
+    media_contexts=media_contexts or []
+    attachments=[]
+    media_blocks=[]
     for m in media_contexts:
-        extracted=m.extracted_text[:6000];visual=m.visual_summary[:3000]
-        if extracted:media_text.append("["+m.kind+" transcript/OCR from "+m.filename+"]\n"+extracted)
-        if visual:media_text.append("["+m.kind+" visual context from "+m.filename+"]\n"+visual)
-        attachments.append(MediaAttachment(filename=m.filename,media_type=m.media_type,kind=m.kind,size_bytes=m.size_bytes,extracted_text=extracted,visual_summary=visual))
-    research_text=text.strip()
-    if media_text:research_text+="\n\nMEDIA-DERIVED CONTENT:\n"+"\n\n".join(media_text)
-    research_text=research_text[:MAX_MEDIA_CONTEXT]
-    claims=await decompose_claims(research_text,prefs)
-    if not claims:claims=[{"claim":research_text,"content_type":prefs.get("content_mode","auto")}]
+        extracted=m.extracted_text[:6000]
+        visual=m.visual_summary[:3000]
+        if extracted:
+            media_blocks.append(f"[{m.kind} OCR/transcript from {m.filename}]\n{extracted}")
+        if visual:
+            media_blocks.append(f"[{m.kind} visual context from {m.filename}]\n{visual}")
+        attachments.append(MediaAttachment(
+            filename=m.filename,media_type=m.media_type,kind=m.kind,size_bytes=m.size_bytes,
+            extracted_text=extracted,visual_summary=visual
+        ))
+
+    primary_text=text.strip()
+    media_only = bool(media_only or not primary_text)
+    if media_only:
+        primary_text=(
+            "Analyze the attached media and identify the smallest set of substantive "
+            "verifiable claims that the media itself presents. Do not create questions "
+            "about identity, date, location, authenticity, or image description unless "
+            "the user explicitly asks for them."
+        )
+
+    # IMPORTANT PRODUCT CONTRACT:
+    # When the user supplies text, that text is the investigation subject. Media is
+    # context/evidence, not a second prompt that should generate independent claims.
+    primary_for_model=primary_text[:9000]
+    claims=await decompose_claims(primary_for_model,prefs,media_only=media_only)
+    if not claims:
+        claims=[{"claim":primary_text,"content_type":prefs.get("content_mode","auto")}]
+    claims=claims[:4]
+
+    # Search only the primary claims. Never search OCR/visual questions as separate claims
+    # when the user already supplied a textual investigation subject.
     batches=await asyncio.gather(*[search_web(c["claim"]) for c in claims])
     evidence=[];seen=set()
     for batch in batches:
         for item in batch:
-            if item["url"] not in seen:seen.add(item["url"]);evidence.append(item)
+            if item["url"] not in seen:
+                seen.add(item["url"]);evidence.append(item)
     if not evidence:raise RuntimeError("Live web evidence retrieval returned no results")
     for i,item in enumerate(evidence,1):item["evidence_id"]=f"E{i:02d}"
-    # Keep the LLM payload bounded while retaining the full evidence set for
-    # deterministic ID/source validation after the model responds.
+
     evidence_for_model=[]
     excerpt_limit=get_settings().groq_evidence_excerpt_chars
     for item in evidence[:12]:
         evidence_for_model.append({
-            "evidence_id":item["evidence_id"],
-            "title":item.get("title",""),
-            "publisher":item.get("publisher",""),
-            "url":item["url"],
+            "evidence_id":item["evidence_id"],"title":item.get("title",""),
+            "publisher":item.get("publisher",""),"url":item["url"],
             "content":str(item.get("content",""))[:excerpt_limit],
             "source_type":item.get("source_type","Other"),
             "source_quality":item.get("source_quality",0),
             "source_tier":item.get("source_tier","Other"),
         })
-    model_research_text=research_text[:9000]
-    data=await groq_json(factcheck_instruction(model_research_text,evidence_for_model,prefs,claims))
+
+    media_context="\n\n".join(media_blocks)[:MAX_MEDIA_CONTEXT]
+    data=await groq_json(factcheck_instruction(
+        primary_for_model,evidence_for_model,prefs,claims,
+        media_context=media_context,media_only=media_only
+    ))
     if not isinstance(data,dict):
         raise RuntimeError("The AI returned an invalid fact-check object")
 
-    # Models sometimes return URL strings instead of the documented evidence
-    # objects. Normalize at the boundary so malformed-but-recoverable output
-    # cannot crash the request with AttributeError.
     def _object_list(value):
-        if not isinstance(value,list):
-            return []
+        if not isinstance(value,list):return []
         return [x if isinstance(x,dict) else {"url":str(x)} for x in value]
 
     for x in evidence:
-        x["source_tier"] = str(x.get("source_tier", "Other"))
-        try: x["source_quality"] = max(0, min(100, int(x.get("source_quality", 0))))
-        except (TypeError, ValueError): x["source_quality"] = 0
+        x["source_tier"]=str(x.get("source_tier","Other"))
+        try:x["source_quality"]=max(0,min(100,int(x.get("source_quality",0))))
+        except (TypeError,ValueError):x["source_quality"]=0
     known={x["url"] for x in evidence};by_id={x["evidence_id"]:x for x in evidence}
     for k in ("sources","supporting_evidence","contradicting_evidence"):
         data[k]=[x for x in _object_list(data.get(k,[])) if x.get("url") in known]
+
+    # The model may still try to turn media observations into new fact checks.
+    # Reject those when text is the primary subject.
+    import re
+    def tokens(value):
+        return set(re.findall(r"[a-z0-9]+",str(value).lower()))
+    primary_tokens=[tokens(c.get("claim","")) for c in claims]
+    def relevant_claim(c):
+        if not isinstance(c,dict) or not str(c.get("claim","")).strip():return False
+        if media_only:return str(c.get("content_type","")).upper()!="QUESTION"
+        ct=str(c.get("content_type","")).upper()
+        if ct=="QUESTION":return False
+        ctoks=tokens(c.get("claim",""))
+        return any(len(ctoks & p)>=max(2,min(5,len(p)//3+1)) for p in primary_tokens)
+
     valid_claims=[]
     for c in _object_list(data.get("claims_checked",[])):
+        if not relevant_claim(c):continue
         sids=[x for x in c.get("supporting_evidence_ids",[]) if x in by_id]
         cids=[x for x in c.get("contradicting_evidence_ids",[]) if x in by_id]
         refs=[by_id[x] for x in dict.fromkeys(sids+cids)]
@@ -72,9 +111,22 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None)->Fac
         c["source_quality"]=round(sum(x["source_quality"] for x in refs)/len(refs)) if refs else 0
         c["corroboration_count"]=len({x["publisher"] for x in refs})
         valid_claims.append(c)
-    data["claims_checked"]=valid_claims
+    if not valid_claims:
+        # Never let an image create an empty/divided report when the user supplied text.
+        valid_claims=[{
+            "claim":claims[0]["claim"],
+            "content_type":claims[0].get("content_type",prefs.get("content_mode","auto")),
+            "verdict":"UNVERIFIED","confidence":0,
+            "summary":"The primary claim could not be grounded in sufficiently relevant evidence.",
+            "supporting_evidence_ids":[],"contradicting_evidence_ids":[],
+            "source_quality":0,"corroboration_count":0,
+            "reasoning":"Retrieved material did not provide relevant evidence for the primary claim.",
+            "what_would_change_conclusion":"A relevant primary source or independent reporting directly addressing the claim."
+        }]
+    data["claims_checked"]=valid_claims[:4]
+
     mapped_support=[];mapped_contra=[]
-    for c in valid_claims:
+    for c in data["claims_checked"]:
         for eid in c["supporting_evidence_ids"]:
             x=by_id[eid];mapped_support.append({"evidence_id":eid,"claim":c["claim"],"excerpt":x["content"],"url":x["url"],"title":x["title"],"publisher":x["publisher"],"source_type":x["source_type"],"source_quality":x["source_quality"],"source_tier":x["source_tier"]})
         for eid in c["contradicting_evidence_ids"]:
@@ -82,10 +134,15 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None)->Fac
     data["supporting_evidence"]=mapped_support;data["contradicting_evidence"]=mapped_contra
     used={x["url"] for x in mapped_support+mapped_contra}
     data["sources"]=[{"title":x["title"],"publisher":x["publisher"],"url":x["url"],"source_type":x["source_type"],"source_quality":x["source_quality"],"source_tier":x["source_tier"],"corroboration_count":sum(1 for y in evidence if y["publisher"]==x["publisher"])} for x in evidence if x["url"] in used][:12]
-    data["live_evidence_available"]=bool(evidence);data["attachments"]=[x.model_dump(mode="json") for x in attachments]
+    data["live_evidence_available"]=bool(evidence)
+    # The user supplied text is the canonical subject of the report. Never let
+    # media-derived wording replace the primary investigation title/claim.
+    data["claim"]=claims[0]["claim"] if claims else primary_text
+    data["report_title"]="Fact Check Report" if not media_only else "Media Fact Check Report"
+    data["attachments"]=[x.model_dump(mode="json") for x in attachments]
     if not data["sources"] and data.get("verdict") not in {"OPINION","PREDICTION"}:
         data["verdict"]="UNVERIFIED";data["confidence"]=min(int(data.get("confidence",0)),50)
-        data.setdefault("uncertainties",[]).append("Retrieved sources did not support a grounded evidence mapping.")
+        data.setdefault("uncertainties",[]).append("Retrieved sources did not support a grounded evidence mapping for the primary claim.")
     data["last_checked"]=datetime.now(timezone.utc).isoformat()
     try:return FactCheckResult.model_validate(data)
     except ValidationError as e:raise RuntimeError("The AI returned an invalid fact-check result") from e

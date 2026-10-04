@@ -140,12 +140,21 @@ def _parse_json(content: str):
         raise RuntimeError("Groq returned invalid JSON") from e
 
 
-async def decompose_claims(text: str, prefs: dict) -> list[dict]:
-    prompt = f"""Decompose this input into the smallest meaningful components that should be analyzed separately.
+async def decompose_claims(text: str, prefs: dict, media_only: bool = False) -> list[dict]:
+    mode_rule = (
+        "The input is text supplied by the user. It is the ONLY subject of this investigation. "
+        "Do not create claims from attached media, OCR, image descriptions, identity questions, "
+        "dates, locations, authenticity, or visual observations."
+        if not media_only else
+        "There is no user text. Derive only substantive verifiable assertions actually presented "
+        "by the media. Do not manufacture identity, authenticity, date, location, or image-description questions."
+    )
+    prompt = f"""Decompose this investigation subject into the smallest meaningful substantive claims.
 Input: {text[:get_settings().groq_claim_input_chars]!r}
 Preferences: {json.dumps(prefs)}
-Return ONLY JSON: {{"claims":[{{"claim":"string","content_type":"FACTUAL CLAIM|ARGUMENT|OPINION|PROPAGANDA|PREDICTION|QUESTION|SATIRE/UNCLEAR|MIXED"}}]}}
-Rules: preserve the user's meaning; do not fact-check or assign truth; do not invent claims; combine only inseparable fragments; split multiple factual assertions and separate factual assertions from opinions or conclusions. Maximum 8 components."""
+{mode_rule}
+Return ONLY JSON: {{"claims":[{{"claim":"string","content_type":"FACTUAL CLAIM|ARGUMENT|OPINION|PROPAGANDA|PREDICTION|SATIRE/UNCLEAR|MIXED"}}]}}
+Rules: preserve the user's meaning; do not fact-check or assign truth; do not invent claims; never turn uncertainty into a separate question; split only genuinely independent assertions. Maximum 4 components."""
     data = await groq_json(prompt)
     if not isinstance(data, dict):
         return []
@@ -153,14 +162,21 @@ Rules: preserve the user's meaning; do not fact-check or assign truth; do not in
     return [x for x in items if isinstance(x, dict) and str(x.get("claim", "")).strip()][:8]
 
 
-def factcheck_instruction(claim, evidence, prefs, claim_units):
-    return f"""Fact-check this input: {claim!r}
+def factcheck_instruction(claim, evidence, prefs, claim_units, media_context="", media_only=False):
+    media_section = (f"Attached media is contextual material only. It may help interpret or corroborate the primary claim, but it MUST NOT create additional claims or questions.\nMEDIA CONTEXT:\n{media_context}" if media_context else "No media context supplied.")
+    subject_rule = (
+        "Return assessments ONLY for the supplied primary text claim units. Do not assess the media as separate claims. Do not add questions about the person, image, date, location, authenticity, or legality unless those are explicitly asserted in the primary text."
+        if not media_only else
+        "Assess only substantive claims actually presented by the media. Do not create image-description or identity questions."
+    )
+    return f"""Fact-check one investigation. PRIMARY INPUT: {claim!r}
 Preferences: {json.dumps(prefs)}
-Decomposed claim units (research was performed separately for each):
+Primary claim units:
 {json.dumps(claim_units, ensure_ascii=False)}
+{media_section}
 Retrieved evidence (ONLY permitted external evidence):
 {json.dumps(evidence, ensure_ascii=False)}
-For each decomposed component, return claims_checked with exact evidence IDs from the supplied evidence. Do not invent IDs. Use supporting_evidence_ids and contradicting_evidence_ids to map evidence to that claim. source_quality must reflect the retrieved source quality (0-100), and corroboration_count is the number of distinct retrieved sources that independently support the assessment. For ARGUMENT, analyze premises, conclusion, reasoning gaps and evidence. For OPINION, analyze the viewpoint without pretending a subjective preference can be objectively proven. For PROPAGANDA, identify concrete persuasive techniques only when actually present; political content is not automatically propaganda. For FACTUAL CLAIM, assess verifiable assertions. For QUESTION, explain what would need to be established. For MIXED, separate components.
+{subject_rule}
+Return ONE coherent report. claims_checked must correspond only to the primary claim units and should normally contain one assessment when the user supplied one substantive claim. Use exact evidence IDs only. Never invent IDs, sources, quotations, dates, or facts. If evidence is insufficient, use UNVERIFIED. Do not write a report about questions that the user did not ask.
 Return exactly one JSON object using this schema:
-{json.dumps(SCHEMA)}
-Sources/evidence URLs and IDs must be copied exactly from supplied evidence. If evidence is insufficient, use UNVERIFIED. Never manufacture dates, excerpts, sources, IDs, or facts."""
+{json.dumps(SCHEMA)}"""

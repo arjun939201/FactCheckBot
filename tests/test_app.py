@@ -57,7 +57,7 @@ def test_chat_failure_is_safe():
 async def test_run_fact_check_normalizes_string_evidence(monkeypatch):
     import app.services.fact_checker as fc
 
-    async def fake_decompose(text, prefs):
+    async def fake_decompose(text, prefs, media_only=False):
         return [{"claim": text, "content_type": "FACTUAL CLAIM"}]
 
     async def fake_search(claim):
@@ -175,3 +175,44 @@ def test_media_route_maps_payload_too_large():
         assert r.status_code==413
     finally:
         monkeypatch.undo()
+
+
+@pytest.mark.asyncio
+async def test_media_does_not_create_separate_claims_when_text_is_primary(monkeypatch):
+    import app.services.fact_checker as fc
+    calls=[]
+    async def fake_decompose(text, prefs, media_only=False):
+        calls.append((text,media_only))
+        return [{"claim":"CJP and congress are driving youth against the ruling party and Modi", "content_type":"FACTUAL CLAIM"}]
+    async def fake_search(claim):
+        return [{"url":"https://example.com/relevant","title":"Relevant","publisher":"Example","content":"Relevant evidence","source_type":"web","source_quality":80,"source_tier":"news"}]
+    async def fake_groq(instruction):
+        return {"claim":"CJP and congress are driving youth against the ruling party and Modi","verdict":"UNVERIFIED","confidence":20,"summary":"Insufficient relevant evidence.","reasoning":"The retrieved material does not establish the claim.","supporting_evidence":[],"contradicting_evidence":[],"sources":[],"claims_checked":[
+            {"claim":"CJP and congress are driving youth against the ruling party and Modi","content_type":"FACTUAL CLAIM","verdict":"UNVERIFIED","confidence":20,"summary":"Insufficient.","supporting_evidence_ids":[],"contradicting_evidence_ids":[],"source_quality":0,"corroboration_count":0,"reasoning":"Insufficient.","what_would_change_conclusion":"Relevant evidence."},
+            {"claim":"MODI IS AN ILLEGAL PM","content_type":"FACTUAL CLAIM","verdict":"UNVERIFIED","confidence":0,"summary":"Media-only claim","supporting_evidence_ids":[],"contradicting_evidence_ids":[],"source_quality":0,"corroboration_count":0,"reasoning":"Should not be included.","what_would_change_conclusion":""},
+            {"claim":"Whether the pictured person is Kharge","content_type":"QUESTION","verdict":"UNVERIFIED","confidence":0,"summary":"Question","supporting_evidence_ids":[],"contradicting_evidence_ids":[],"source_quality":0,"corroboration_count":0,"reasoning":"Should not be included.","what_would_change_conclusion":""}
+        ]}
+    monkeypatch.setattr(fc,"decompose_claims",fake_decompose)
+    monkeypatch.setattr(fc,"search_web",fake_search)
+    monkeypatch.setattr(fc,"groq_json",fake_groq)
+    from app.services.media import MediaContext
+    result=await fc.run_fact_check("CJP and congress are driving youth against the ruling party and Modi", {"content_mode":"auto"}, [MediaContext("image.jpg","image/jpeg",10,"image","MODI IS AN ILLEGAL PM","political image")])
+    assert calls[0][1] is False
+    assert len(result.claims_checked)==1
+    assert "MODI IS AN ILLEGAL PM" not in result.claims_checked[0].claim
+
+
+@pytest.mark.asyncio
+async def test_media_only_can_generate_substantive_claims(monkeypatch):
+    import app.services.fact_checker as fc
+    async def fake_decompose(text, prefs, media_only=False):
+        assert media_only is True
+        return [{"claim":"The image says the Prime Minister is illegal", "content_type":"FACTUAL CLAIM"}]
+    async def fake_search(claim):
+        return [{"url":"https://example.com/legal","title":"Legal source","publisher":"Example","content":"Legal evidence","source_type":"web","source_quality":90,"source_tier":"official"}]
+    async def fake_groq(instruction):
+        return {"claim":"The image says the Prime Minister is illegal","verdict":"UNVERIFIED","confidence":10,"summary":"Insufficient.","reasoning":"Insufficient.","supporting_evidence":[],"contradicting_evidence":[],"sources":[],"claims_checked":[{"claim":"The image says the Prime Minister is illegal","content_type":"FACTUAL CLAIM","verdict":"UNVERIFIED","confidence":10,"summary":"Insufficient.","supporting_evidence_ids":[],"contradicting_evidence_ids":[],"source_quality":0,"corroboration_count":0,"reasoning":"Insufficient.","what_would_change_conclusion":"Relevant evidence."}]}
+    monkeypatch.setattr(fc,"decompose_claims",fake_decompose);monkeypatch.setattr(fc,"search_web",fake_search);monkeypatch.setattr(fc,"groq_json",fake_groq)
+    from app.services.media import MediaContext
+    result=await fc.run_fact_check("", {"content_mode":"auto"}, [MediaContext("image.jpg","image/jpeg",10,"image","MODI IS AN ILLEGAL PM","political image")], media_only=True)
+    assert len(result.claims_checked)==1
