@@ -51,3 +51,56 @@ def test_media_requires_text_or_file():
 def test_chat_failure_is_safe():
     r=client.post("/api/chat",json={"message":"hello"})
     assert r.status_code in (200,502)
+
+
+@pytest.mark.asyncio
+async def test_run_fact_check_normalizes_string_evidence(monkeypatch):
+    import app.services.fact_checker as fc
+
+    async def fake_decompose(text, prefs):
+        return [{"claim": text, "content_type": "FACTUAL CLAIM"}]
+
+    async def fake_search(claim):
+        return [{
+            "url": "https://example.com/evidence",
+            "title": "Evidence",
+            "publisher": "Example",
+            "content": "Evidence excerpt",
+            "source_type": "web",
+            "source_quality": 60,
+            "source_tier": 4,
+        }]
+
+    async def fake_groq(instruction):
+        return {
+            "claim": "Test claim",
+            "verdict": "TRUE",
+            "confidence": 80,
+            "summary": "Supported",
+            "reasoning": "Grounded in supplied evidence.",
+            "supporting_evidence": ["https://example.com/evidence"],
+            "contradicting_evidence": [],
+            "sources": ["https://example.com/evidence"],
+            "claims_checked": [{
+                "claim": "Test claim",
+                "content_type": "FACTUAL CLAIM",
+                "verdict": "TRUE",
+                "confidence": 80,
+                "summary": "Supported",
+                "supporting_evidence_ids": ["E01"],
+                "contradicting_evidence_ids": [],
+                "source_quality": 60,
+                "corroboration_count": 1,
+                "reasoning": "Supported.",
+                "what_would_change_conclusion": "New contradictory evidence."
+            }]
+        }
+
+    monkeypatch.setattr(fc, "decompose_claims", fake_decompose)
+    monkeypatch.setattr(fc, "search_web", fake_search)
+    monkeypatch.setattr(fc, "groq_json", fake_groq)
+
+    result=await fc.run_fact_check("Test claim", {"content_mode":"auto"})
+    assert result.verdict.value == "TRUE"
+    assert result.sources[0].url == "https://example.com/evidence"
+    assert result.claims_checked[0].supporting_evidence_ids == ["E01"]

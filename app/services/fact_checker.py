@@ -27,11 +27,22 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None)->Fac
     if not evidence:raise RuntimeError("Live web evidence retrieval returned no results")
     for i,item in enumerate(evidence,1):item["evidence_id"]=f"E{i:02d}"
     data=await groq_json(factcheck_instruction(research_text,evidence,prefs,claims))
+    if not isinstance(data,dict):
+        raise RuntimeError("The AI returned an invalid fact-check object")
+
+    # Models sometimes return URL strings instead of the documented evidence
+    # objects. Normalize at the boundary so malformed-but-recoverable output
+    # cannot crash the request with AttributeError.
+    def _object_list(value):
+        if not isinstance(value,list):
+            return []
+        return [x if isinstance(x,dict) else {"url":str(x)} for x in value]
+
     known={x["url"] for x in evidence};by_id={x["evidence_id"]:x for x in evidence}
     for k in ("sources","supporting_evidence","contradicting_evidence"):
-        data[k]=[x for x in data.get(k,[]) if x.get("url") in known]
+        data[k]=[x for x in _object_list(data.get(k,[])) if x.get("url") in known]
     valid_claims=[]
-    for c in data.get("claims_checked",[]):
+    for c in _object_list(data.get("claims_checked",[])):
         sids=[x for x in c.get("supporting_evidence_ids",[]) if x in by_id]
         cids=[x for x in c.get("contradicting_evidence_ids",[]) if x in by_id]
         refs=[by_id[x] for x in dict.fromkeys(sids+cids)]
@@ -70,6 +81,12 @@ Article text:
 Identify important factual assertions and provide an article-level assessment. Use ONLY retrieved evidence. Return JSON with article_title, overall_verdict, overall_confidence, summary, claims_checked (claim, verdict, confidence, summary), sources, uncertainties, last_checked. Keep no more than 8 claims.
 Retrieved evidence:
 {evidence}"""
-    data=await groq_json(prompt);known={x["url"] for x in evidence}
-    data["article_url"]=url;data["sources"]=[x for x in data.get("sources",[]) if x.get("url") in known];data["live_evidence_available"]=True;data["last_checked"]=datetime.now(timezone.utc).isoformat()
+    data=await groq_json(prompt)
+    if not isinstance(data,dict):
+        raise RuntimeError("The AI returned an invalid article fact-check object")
+    known={x["url"] for x in evidence}
+    raw_sources=data.get("sources",[])
+    if not isinstance(raw_sources,list): raw_sources=[]
+    raw_sources=[x if isinstance(x,dict) else {"url":str(x)} for x in raw_sources]
+    data["article_url"]=url;data["sources"]=[x for x in raw_sources if x.get("url") in known];data["live_evidence_available"]=True;data["last_checked"]=datetime.now(timezone.utc).isoformat()
     return ArticleFactCheck.model_validate(data)
