@@ -3,7 +3,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse,HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from .routes import chat,factcheck,history,health
-app=FastAPI(title="Fact Check",description="Evidence-first fact checking with Grok",version="1.0.0")
+app=FastAPI(title="Fact Check",description="Evidence-first fact checking with Groq",version="1.0.0")
 app.add_middleware(CORSMiddleware,allow_origins=["*"],allow_methods=["GET","POST","DELETE"],allow_headers=["*"])
 app.include_router(health.router,prefix="/api");app.include_router(chat.router,prefix="/api");app.include_router(factcheck.router,prefix="/api");app.include_router(history.router,prefix="/api")
 frontend=Path(__file__).resolve().parents[1]/"frontend"
