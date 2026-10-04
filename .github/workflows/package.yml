@@ -1,0 +1,18 @@
+name: Create Project ZIP
+on:
+  push:
+    branches:
+      - snapshot/factcheckbot-current
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package repository
+        run: |
+          zip -r FactCheckBot-current.zip . -x ".git/*" ".github/workflows/package.yml"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FactCheckBot-current
+          path: FactCheckBot-current.zip
+          retention-days: 1
