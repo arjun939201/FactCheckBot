@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app
-from app.models.factcheck import FactCheckRequest,FactCheckResult,Verdict,ContentType
+from app.models.factcheck import FactCheckRequest,FactCheckResult,Verdict,ContentType,ClaimAssessment
 from app.services.source_validator import normalize_url,allowed_source_url
 
 client=TestClient(app)
@@ -33,6 +33,10 @@ def test_urls():
 def test_allowlist():
     assert allowed_source_url("https://example.com",{"https://example.com"})
     assert not allowed_source_url("https://evil.example",{"https://example.com"})
+
+def test_claim_assessment_schema():
+    c=ClaimAssessment(claim="A happened",verdict="TRUE",confidence=80,summary="supported",supporting_evidence_ids=["E01"],source_quality=90,corroboration_count=2)
+    assert c.supporting_evidence_ids==["E01"];assert c.source_quality==90
 
 def test_root_has_media_input():
     r=client.get("/")
