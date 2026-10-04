@@ -1,10 +1,11 @@
 from datetime import datetime,timezone
 from pydantic import ValidationError
+from ..config import get_settings
 from ..models.factcheck import FactCheckResult,ArticleFactCheck
 from .grok import grok_json,factcheck_instruction
 from .search import search_web,SearchError
 async def run_fact_check(text:str,prefs:dict)->FactCheckResult:
-    evidence=[]; live=True
+    evidence=[]; live=bool(get_settings().search_api_key)
     try:evidence=await search_web(text)
     except SearchError:live=False
     data=await grok_json(factcheck_instruction(text,evidence,prefs))
@@ -13,7 +14,7 @@ async def run_fact_check(text:str,prefs:dict)->FactCheckResult:
     data["live_evidence_available"]=live
     if not live:data.setdefault("uncertainties",[]).append("Live evidence retrieval is currently unavailable. This result should not be treated as independently verified.")
     if not data.get("sources") and data.get("verdict") not in {"OPINION","PREDICTION"}:
-        data["verdict"]="UNVERIFIED"; data["confidence"]=min(int(data.get("confidence",0)),50)
+        data["verdict"]="UNVERIFIED";data["confidence"]=min(int(data.get("confidence",0)),50)
         data.setdefault("uncertainties",[]).append("Insufficient reliable evidence was found to independently verify this claim.")
     data["last_checked"]=datetime.now(timezone.utc).isoformat()
     try:return FactCheckResult.model_validate(data)
@@ -22,7 +23,7 @@ async def run_url_fact_check(url:str,prefs:dict)->ArticleFactCheck:
     from .article_parser import fetch_article,ArticleFetchError
     try:title,article=await fetch_article(url)
     except ArticleFetchError as e:raise ValueError(str(e)) from e
-    evidence=[]; live=True
+    evidence=[];live=bool(get_settings().search_api_key)
     try:evidence=await search_web(title+" "+article[:3000])
     except SearchError:live=False
     prompt=f"""Article title: {title}
@@ -32,7 +33,7 @@ Article text:
 Identify important factual assertions and provide an article-level assessment. Use ONLY retrieved evidence. Return JSON with article_title, overall_verdict, overall_confidence, summary, claims_checked (claim, verdict, confidence, summary), sources, uncertainties, last_checked. Keep no more than 8 claims.
 Retrieved evidence:
 {evidence}"""
-    data=await grok_json(prompt); known={x["url"] for x in evidence}; data["article_url"]=url
-    data["sources"]=[x for x in data.get("sources",[]) if x.get("url") in known]; data["live_evidence_available"]=live
+    data=await grok_json(prompt);known={x["url"] for x in evidence};data["article_url"]=url
+    data["sources"]=[x for x in data.get("sources",[]) if x.get("url") in known];data["live_evidence_available"]=live
     if not live:data.setdefault("uncertainties",[]).append("Live evidence retrieval is currently unavailable. This result should not be treated as independently verified.")
-    data["last_checked"]=datetime.now(timezone.utc).isoformat(); return ArticleFactCheck.model_validate(data)
+    data["last_checked"]=datetime.now(timezone.utc).isoformat();return ArticleFactCheck.model_validate(data)
