@@ -4,23 +4,25 @@ from ..models.factcheck import FactCheckResult,ArticleFactCheck,MediaAttachment
 from .groq import groq_json,factcheck_instruction
 from .search import search_web
 
+MAX_MEDIA_CONTEXT=16000
+
 async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None)->FactCheckResult:
     media_contexts=media_contexts or []
-    media_text=[]
-    attachments=[]
+    media_text=[];attachments=[]
     for m in media_contexts:
-        if m.extracted_text: media_text.append("["+m.kind+" transcript/OCR from "+m.filename+"]\n"+m.extracted_text)
-        if m.visual_summary: media_text.append("["+m.kind+" visual context from "+m.filename+"]\n"+m.visual_summary)
-        attachments.append(MediaAttachment(filename=m.filename,media_type=m.media_type,kind=m.kind,size_bytes=m.size_bytes,extracted_text=m.extracted_text,visual_summary=m.visual_summary))
+        extracted=m.extracted_text[:6000]; visual=m.visual_summary[:3000]
+        if extracted: media_text.append("["+m.kind+" transcript/OCR from "+m.filename+"]\n"+extracted)
+        if visual: media_text.append("["+m.kind+" visual context from "+m.filename+"]\n"+visual)
+        attachments.append(MediaAttachment(filename=m.filename,media_type=m.media_type,kind=m.kind,size_bytes=m.size_bytes,extracted_text=extracted,visual_summary=visual))
     research_text=text.strip()
-    if media_text: research_text += "\n\nMEDIA-DERIVED CONTENT:\n" + "\n\n".join(media_text)
+    if media_text: research_text+="\n\nMEDIA-DERIVED CONTENT:\n"+"\n\n".join(media_text)
+    research_text=research_text[:MAX_MEDIA_CONTEXT]
     evidence=await search_web(research_text)
     data=await groq_json(factcheck_instruction(research_text,evidence,prefs))
     known={x["url"] for x in evidence}
     for k in ("sources","supporting_evidence","contradicting_evidence"):
         data[k]=[x for x in data.get(k,[]) if x.get("url") in known]
-    data["live_evidence_available"]=bool(evidence)
-    data["attachments"]=[x.model_dump(mode="json") for x in attachments]
+    data["live_evidence_available"]=bool(evidence);data["attachments"]=[x.model_dump(mode="json") for x in attachments]
     if not evidence: raise RuntimeError("Live web evidence retrieval returned no results")
     if not data.get("sources") and data.get("verdict") not in {"OPINION","PREDICTION"}:
         data["verdict"]="UNVERIFIED";data["confidence"]=min(int(data.get("confidence",0)),50)
@@ -44,6 +46,6 @@ Retrieved evidence:
 {evidence}"""
     data=await groq_json(prompt)
     known={x["url"] for x in evidence}
-    data["article_url"]=url; data["sources"]=[x for x in data.get("sources",[]) if x.get("url") in known]
-    data["live_evidence_available"]=True; data["last_checked"]=datetime.now(timezone.utc).isoformat()
+    data["article_url"]=url;data["sources"]=[x for x in data.get("sources",[]) if x.get("url") in known]
+    data["live_evidence_available"]=True;data["last_checked"]=datetime.now(timezone.utc).isoformat()
     return ArticleFactCheck.model_validate(data)
