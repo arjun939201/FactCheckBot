@@ -1,6 +1,6 @@
 from fastapi import APIRouter,HTTPException
 from pydantic import BaseModel,Field
-from ..services.grok import grok_json
+from ..services.groq import groq_json
 router=APIRouter()
 class ChatRequest(BaseModel):
     message:str=Field(min_length=1,max_length=12000); history:list[dict]=[]
