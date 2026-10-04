@@ -10,10 +10,15 @@ class ContentType(str,Enum):
     PREDICTION="PREDICTION"; QUESTION="QUESTION"; SATIRE="SATIRE/UNCLEAR"; MIXED="MIXED"
 class Source(BaseModel):
     title:str; publisher:str=""; url:HttpUrl; date:str=""; source_type:str="Other"; relevance:str=""; excerpt:str=""; retrieved_at:str=""
+    source_quality:int=Field(default=0,ge=0,le=100); source_tier:str="Other"; corroboration_count:int=0
 class Evidence(BaseModel):
-    claim:str; excerpt:str; url:HttpUrl; title:str=""; publisher:str=""; source_type:str="Other"
+    evidence_id:str=""; claim:str; excerpt:str; url:HttpUrl; title:str=""; publisher:str=""; source_type:str="Other"
+    source_quality:int=Field(default=0,ge=0,le=100); source_tier:str="Other"
 class ClaimAssessment(BaseModel):
-    claim:str; verdict:Verdict; confidence:int=Field(ge=0,le=100); summary:str
+    claim:str; content_type:ContentType=ContentType.FACT; verdict:Verdict; confidence:int=Field(ge=0,le=100); summary:str
+    supporting_evidence_ids:list[str]=[]; contradicting_evidence_ids:list[str]=[]
+    source_quality:int=Field(default=0,ge=0,le=100); corroboration_count:int=0
+    reasoning:str=""; what_would_change_conclusion:str=""
 class FactCheckRequest(BaseModel):
     text:str=Field(min_length=1,max_length=12000)
     content_mode:str=Field(default="auto",pattern="^(auto|factual|argument|opinion|propaganda|prediction|question|satire|mixed)$")
