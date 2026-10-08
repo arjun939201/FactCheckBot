@@ -23,6 +23,14 @@ class GroqPayloadTooLargeError(GroqProviderError):
     """The request is too large for the selected provider model."""
 
 
+class GroqRateLimitError(GroqProviderError):
+    """Groq temporarily rejected the request because of a rate limit."""
+
+    def __init__(self, message: str, retry_after: float = 10.0):
+        super().__init__(message)
+        self.retry_after = max(1.0, float(retry_after))
+
+
 def _is_text_generation_model(model: str) -> bool:
     """Reject guard/classifier/transcription models from generic chat fallback."""
     m=model.lower()
@@ -86,6 +94,25 @@ async def _request(model, instruction):
         )
         if r.is_error:
             logger.error("Groq request failed: status=%s model=%s body=%s",r.status_code,model,r.text[:1000])
+            if r.status_code == 429:
+                retry_after = 10.0
+                header = r.headers.get("Retry-After")
+                if header:
+                    try:
+                        retry_after = float(header)
+                    except ValueError:
+                        pass
+                try:
+                    message = str(r.json().get("error", {}).get("message", ""))
+                except Exception:
+                    message = r.text
+                match = re.search(r"try again in\s+([0-9.]+)s", message, flags=re.I)
+                if match:
+                    retry_after = float(match.group(1))
+                raise GroqRateLimitError(
+                    f"AI analysis is temporarily rate-limited. Please retry in about {max(1, round(retry_after))} seconds.",
+                    retry_after=retry_after,
+                )
             if r.status_code==400 and "reduce the length" in r.text.lower():
                 raise GroqPayloadTooLargeError("Groq rejected the request because the prompt is too large.")
             r.raise_for_status()
@@ -102,6 +129,10 @@ async def groq_json(instruction):
             candidates.append(model)
     last_error=None
     for model in candidates:
+        # Avoid a known retired Groq model even when an old Render env var remains.
+        if model == "llama-3.3-70b-versatile":
+            logger.warning("Skipping known retired Groq model: %s", model)
+            continue
         # Retired/stale model names can remain in Render environment variables.
         # A 404 must be treated as configuration fallback, not as a request failure.
         try:
