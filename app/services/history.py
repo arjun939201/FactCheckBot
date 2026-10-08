@@ -10,10 +10,21 @@ class HistoryStore:
         self.settings = get_settings()
         self.url = self.settings.database_url
         self.postgres = self.url.startswith(("postgresql://", "postgres://"))
+        self.database_error = None
         if self.postgres:
             import psycopg
             self._psycopg = psycopg
-            self._init_postgres()
+            try:
+                self._init_postgres()
+            except Exception as exc:
+                # A stale/unavailable hosted database must not prevent the
+                # web application from starting. Fall back to local SQLite.
+                self.database_error = f"PostgreSQL unavailable: {exc}"
+                self.postgres = False
+                self.url = "sqlite:///./factcheck.db"
+                self.path = Path("./factcheck.db")
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                self._init_sqlite()
         elif self.url.startswith("sqlite:///"):
             self.path = Path(self.url.replace("sqlite:///", "", 1))
             self.path.parent.mkdir(parents=True, exist_ok=True)
