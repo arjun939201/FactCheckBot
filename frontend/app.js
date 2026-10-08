@@ -39,8 +39,29 @@ function sourceCards(a){return(a||[]).map((x,i)=>`<article class="source-card"><
 function claims(a){return(a||[]).map((c,i)=>`<article class="claim-card"><b>${i+1}. ${esc(c.claim)}</b><div class="mini-verdict ${verdictClass(c.verdict)}">${esc(c.verdict)} · ${c.confidence}%</div><p>${esc(c.summary)}</p><div class="mini-meta">${esc(c.content_type)} · source quality ${c.source_quality}/100 · ${c.corroboration_count} independent source(s)</div>${c.reasoning?`<p><b>Reasoning:</b> ${esc(c.reasoning)}</p>`:''}${c.what_would_change_conclusion?`<p class="mini-meta"><b>Could change:</b> ${esc(c.what_would_change_conclusion)}</p>`:''}</article>`).join('')||'<div class="empty">No separate claim assessments were returned.</div>'}
 function mediaCards(a){return(a||[]).map(x=>`<article class="media-card"><b>📎 ${esc(x.filename)}</b><div class="mini-meta">${esc(x.kind)} · ${Math.round((x.size_bytes||0)/1024)} KB</div>${x.extracted_text?`<p><b>Extracted text:</b> ${esc(x.extracted_text)}</p>`:''}${x.visual_summary?`<p><b>Visual context:</b> ${esc(x.visual_summary)}</p>`:''}</article>`).join('')||'<div class="empty">No media attached.</div>'}
 function reportShell(d,article=false){const verdict=article?d.overall_verdict:d.verdict,confidence=article?d.overall_confidence:d.confidence;return `<div class="resultcard"><div class="result-head"><div><div class="result-kicker">${article?'ARTICLE':'CLAIM'} · ${esc(article?'LIVE SOURCES':d.content_type)}</div><h2>${esc(article?d.article_title:(d.claim||d.report_title||'Fact Check'))}</h2><div class="verdict ${verdictClass(verdict)}">${esc(verdict)}</div><div class="confidence">Confidence <strong>${confidence}%</strong> · ${esc(d.last_checked||'')}</div></div><button class="secondary share-btn" onclick="shareResult(${d.id})">Share</button></div>`}
-function researchCards(d){const qs=d.research_questions||[];const rd=d.research_data||[];if(!qs.length&&!rd.length)return '';const byQ=new Map(rd.map(x=>[x.question,x]));return \`<section class="result-section research-trace"><h3>Research process</h3><div class="process-steps"><div><b>1. Input</b><p>Original user input</p></div><div><b>2. Breakdown</b><p>\${qs.length} research question(s)</p></div><div><b>3. Web search</b><p>Live sources searched</p></div><div><b>4. Raw research</b><p>Question-level findings</p></div><div><b>5. Synthesis</b><p>Answer + verdict</p></div></div>\${qs.map((q,i)=>{const x=byQ.get(q)||{};return \`<article class="research-item"><b>Q\${i+1}: \${esc(q)}</b><p>\${esc(x.answer||'No sufficient retrieved answer.')}</p>\${x.evidence_ids?.length?\`<div class="mini-meta">Evidence: \${esc(x.evidence_ids.join(', '))}</div>\`:''}</article>\`}).join('')}</section>\`}
-
+function researchCards(d){
+  const qs=d.research_questions||[];
+  const rd=d.research_data||[];
+  if(!qs.length&&!rd.length)return '';
+  const byQ=new Map(rd.map(x=>[x.question,x]));
+  return `<section class="result-section research-trace"><h3>Research process</h3>
+    <div class="process-steps">
+      <div><b>1. Input</b><p>Original user input</p></div>
+      <div><b>2. Breakdown</b><p>${qs.length} research question(s)</p></div>
+      <div><b>3. Web search</b><p>Live sources searched</p></div>
+      <div><b>4. Raw research</b><p>Question-level findings</p></div>
+      <div><b>5. Synthesis</b><p>Answer + verdict</p></div>
+    </div>
+    ${qs.map((q,i)=>{
+      const x=byQ.get(q)||{};
+      return `<article class="research-item">
+        <b>Q${i+1}: ${esc(q)}</b>
+        <p>${esc(x.answer||'No sufficient retrieved answer.')}</p>
+        ${x.evidence_ids?.length?`<div class="mini-meta">Evidence: ${esc(x.evidence_ids.join(', '))}</div>`:''}
+      </article>`;
+    }).join('')}
+  </section>`;
+}
 function renderResult(d){let uncertainty=d.uncertainties?.length?`<div class="warning"><b>Uncertainty & limits</b><ul>${d.uncertainties.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`:'';$('#result').innerHTML=reportShell(d)+`<div class="result-grid"><div><section class="result-section"><h3>Bottom line</h3><p class="summary">${esc(d.summary)}</p></section>${researchCards(d)}<section class="result-section"><h3>Claims</h3>${claims(d.claims_checked)}</section><section class="result-section"><h3>Supports</h3>${evidenceCards(d.supporting_evidence)}</section><section class="result-section"><h3>Contradicts</h3>${evidenceCards(d.contradicting_evidence,true)}</section></div><aside><section class="result-section"><h3>Why</h3><p>${esc(d.reasoning)}</p></section><section class="result-section"><h3>Sources</h3>${sourceCards(d.sources)}</section>${d.context?`<section class="result-section"><h3>Context</h3><p>${esc(d.context)}</p></section>`:''}${d.attachments?.length?`<section class="result-section"><h3>Media</h3>${mediaCards(d.attachments)}</section>`:''}</aside></div>${uncertainty}</div>`}
 function renderArticle(d){$('#result').innerHTML=reportShell(d,true)+`<div class="result-grid"><div><section class="result-section"><h3>Bottom line</h3><p class="summary">${esc(d.summary)}</p></section><section class="result-section"><h3>Claims</h3>${claims((d.claims_checked||[]).map(c=>({...c,content_type:'ARTICLE CLAIM',source_quality:0,corroboration_count:0})) )}</section></div><aside><section class="result-section"><h3>Sources</h3>${sourceCards(d.sources)}</section>${d.uncertainties?.length?`<div class="warning"><b>Uncertainty</b><ul>${d.uncertainties.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`:''}</aside></div></div>`}
 window.shareResult=async id=>{const u=location.origin+'/share/'+id;try{await navigator.clipboard.writeText(u);$('#status').textContent='Share link copied.';setTimeout(()=>$('#status').textContent='',1800)}catch{prompt('Copy share link',u)}};
