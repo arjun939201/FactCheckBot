@@ -4,7 +4,7 @@ from datetime import datetime,timezone
 from pydantic import ValidationError
 from ..models.factcheck import FactCheckResult,ArticleFactCheck,MediaAttachment
 from ..config import get_settings
-from .groq import groq_json,factcheck_instruction,decompose_claims
+from .groq import groq_json,factcheck_instruction,decompose_claims,plan_resources
 from .search import search_web
 
 MAX_MEDIA_CONTEXT=12000
@@ -50,8 +50,17 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
     if not research_questions:
         research_questions = [f"What evidence directly answers or verifies this input: {primary_text[:500]}?"]
 
-    # Search each research question first. These results become the raw research dataset.
-    question_batches = await asyncio.gather(*[search_web(q) for q in research_questions])
+    # Select evidence resources for this context before searching.
+    resource_plan = await plan_resources(primary_text, research_questions, prefs)
+    resource_plan.setdefault("context", "general")
+    resource_plan.setdefault("resource_types", [])
+    resource_plan.setdefault("preferred_domains", [])
+    resource_plan.setdefault("search_strategy", [])
+    resource_plan.setdefault("rationale", "")
+    # Search each research question using the selected resource strategy.
+    question_batches = await asyncio.gather(*[
+        search_web(q, resource_plan=resource_plan) for q in research_questions
+    ])
     evidence=[];seen=set()
     for batch in question_batches:
         for item in batch:
@@ -192,6 +201,7 @@ FINAL STAGE: Synthesize the research into the best-supported answer to the user'
         if q and a: cleaned_research.append({"question":q,"answer":a,"evidence_ids":ids})
     data["research_questions"]=research_questions
     data["research_data"]=cleaned_research
+    data["resource_plan"]=resource_plan
     if not data["sources"] and data.get("verdict") not in {"OPINION","PREDICTION"}:
         data["verdict"]="UNVERIFIED";data["confidence"]=min(int(data.get("confidence",0)),50)
         data.setdefault("uncertainties",[]).append("Retrieved sources did not support a grounded evidence mapping for the primary claim.")
