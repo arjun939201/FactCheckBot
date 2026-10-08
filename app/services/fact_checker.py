@@ -89,6 +89,7 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
     if not isinstance(raw_items,list):raw_items=[]
     raw_items=[x for x in raw_items if isinstance(x,dict)][:5]
 
+    evidence_for_model=[]
     excerpt_limit=get_settings().groq_evidence_excerpt_chars
     for item in evidence[:12]:
         evidence_for_model.append({
