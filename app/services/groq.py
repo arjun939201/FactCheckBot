@@ -153,7 +153,7 @@ async def decompose_claims(text: str, prefs: dict, media_only: bool = False) -> 
 Input: {text[:get_settings().groq_claim_input_chars]!r}
 Preferences: {json.dumps(prefs)}
 {mode_rule}
-Return ONLY JSON: {{"claims":[{{"claim":"string","content_type":"FACTUAL CLAIM|ARGUMENT|OPINION|PROPAGANDA|PREDICTION|SATIRE/UNCLEAR|MIXED"}}]}}
+Return ONLY JSON: {{"claims":[{{"claim":"string","content_type":"FACTUAL CLAIM|ARGUMENT|OPINION|PROPAGANDA|PREDICTION|QUESTION|SATIRE/UNCLEAR|MIXED"}}]}}
 Rules: preserve the user's meaning; do not fact-check or assign truth; do not invent claims; never turn uncertainty into a separate question; split only genuinely independent assertions. Maximum 4 components."""
     data = await groq_json(prompt)
     if not isinstance(data, dict):
@@ -163,13 +163,16 @@ Rules: preserve the user's meaning; do not fact-check or assign truth; do not in
 
 
 def factcheck_instruction(claim, evidence, prefs, claim_units, media_context="", media_only=False):
-    media_section = (f"Attached media is contextual material only. It may help interpret or corroborate the primary claim, but it MUST NOT create additional claims or questions.\nMEDIA CONTEXT:\n{media_context}" if media_context else "No media context supplied.")
-    subject_rule = (
-        "Return assessments ONLY for the supplied primary text claim units. Do not assess the media as separate claims. Do not add questions about the person, image, date, location, authenticity, or legality unless those are explicitly asserted in the primary text."
-        if not media_only else
-        "Assess only substantive claims actually presented by the media. Do not create image-description or identity questions."
-    )
-    return f"""Fact-check one investigation. PRIMARY INPUT: {claim!r}
+    media_section = (f"Attached media is contextual material only. It may help interpret or corroborate the primary input, but it MUST NOT create additional claims or questions.\\nMEDIA CONTEXT:\\n{media_context}" if media_context else "No media context supplied.")
+    is_question = any(str(x.get("content_type","")).upper() == "QUESTION" for x in claim_units if isinstance(x, dict))
+    if media_only:
+        subject_rule = "Assess only substantive claims actually presented by the media. Do not create image-description or identity questions."
+    elif is_question:
+        subject_rule = "The primary input is a QUESTION. Answer that exact question directly in summary. Do NOT convert it into a factual claim and do NOT give a truth-status verdict. Use only the retrieved evidence. If the evidence establishes the answer, state it plainly (for example, 'No.' or 'Yes.') and briefly explain why. Map evidence IDs that support the answer into sources and/or supporting_evidence. If the evidence genuinely cannot establish the answer, say that clearly instead. claims_checked may be empty for a question."
+    else:
+        subject_rule = "Return assessments ONLY for the supplied primary text claim units. Do not assess the media as separate claims. Do not add questions about the person, image, date, location, authenticity, or legality unless those are explicitly asserted in the primary text."
+    task = "Answer the user's question" if is_question and not media_only else "Fact-check one investigation"
+    return f"""{task}. PRIMARY INPUT: {claim!r}
 Preferences: {json.dumps(prefs)}
 Primary claim units:
 {json.dumps(claim_units, ensure_ascii=False)}
@@ -177,9 +180,10 @@ Primary claim units:
 Retrieved evidence (ONLY permitted external evidence). Prefer evidence with higher relevance_score; ignore items whose relevance_score is low or whose relevance_reason shows only incidental keyword overlap:
 {json.dumps(evidence, ensure_ascii=False)}
 {subject_rule}
-Return ONE coherent report. claims_checked must correspond only to the primary claim units and should normally contain one assessment when the user supplied one substantive claim. Use exact evidence IDs only. Never invent IDs, sources, quotations, dates, or facts. If evidence is insufficient, use UNVERIFIED. Do not write a report about questions that the user did not ask.
+Return ONE coherent report. Use exact evidence IDs only. Never invent IDs, sources, quotations, dates, or facts. For a question, summary MUST be the direct answer to the user's question; verdict is only an internal placeholder and must not be presented as a truth assessment. Do not phrase the answer as 'no evidence' when the supplied evidence actually establishes the answer. For claims, if evidence is insufficient, use UNVERIFIED.
 Return exactly one JSON object using this schema:
 {json.dumps(SCHEMA)}"""
+
 
     
 async def plan_resources(text: str, questions: list[str], prefs: dict) -> dict:
