@@ -1,5 +1,6 @@
 import json
 import asyncio
+import re
 from datetime import datetime,timezone
 from pydantic import ValidationError
 from ..models.factcheck import FactCheckResult,ArticleFactCheck,MediaAttachment
@@ -39,7 +40,15 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
     # When the user supplies text, that text is the investigation subject. Media is
     # context/evidence, not a second prompt that should generate independent claims.
     primary_for_model=primary_text[:9000]
+    # Explicit questions must remain questions, not be converted into factual claims.
+    explicit_question = bool(re.search(r"\\?\\s*$", primary_text)) or bool(
+        re.match(r"(?i)^(is|are|was|were|will|can|could|does|do|did|has|have|who|what|when|where|which|why|how)\\b", primary_text)
+    )
     claims=await decompose_claims(primary_for_model,prefs,media_only=media_only)
+    if explicit_question and claims:
+        for claim in claims:
+            if isinstance(claim,dict):
+                claim["content_type"]="QUESTION"
     if not claims:
         claims=[{"claim":primary_text,"content_type":prefs.get("content_mode","auto")}]
     claims=claims[:4]
@@ -194,6 +203,11 @@ FINAL STAGE: Synthesize the research into the best-supported answer to the user'
     # The user supplied text is the canonical subject of the report. Never let
     # media-derived wording replace the primary investigation title/claim.
     data["claim"]=claims[0]["claim"] if claims else primary_text
+    if explicit_question:
+        data["content_type"]="QUESTION"
+        # A question receives an answer, not a truth-status verdict.
+        data["verdict"]="UNVERIFIED"
+        data["confidence"]=0
     data["report_title"]="Fact Check Report" if not media_only else "Media Fact Check Report"
     data["attachments"]=[x.model_dump(mode="json") for x in attachments]
     valid_ids={x["evidence_id"] for x in evidence}
