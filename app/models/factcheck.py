@@ -29,6 +29,9 @@ class FactCheckRequest(BaseModel):
 class URLFactCheckRequest(FactCheckRequest): url:HttpUrl
 class MediaAttachment(BaseModel):
     filename:str; media_type:str; kind:str; size_bytes:int; extracted_text:str=""; visual_summary:str=""
+class ResearchData(BaseModel):
+    question:str; answer:str; evidence_ids:list[str]=Field(default_factory=list)
+
 class FactCheckResult(BaseModel):
     claim:str; verdict:Verdict; confidence:int=Field(ge=0,le=100); summary:str; reasoning:str
     key_points:list[str]=Field(default_factory=list); supporting_evidence:list[Evidence]=Field(default_factory=list); contradicting_evidence:list[Evidence]=Field(default_factory=list)
@@ -36,6 +39,8 @@ class FactCheckResult(BaseModel):
     report_title:str="Fact Check Analysis Report"; report_sections:list[str]=Field(default_factory=list); attachments:list[MediaAttachment]=Field(default_factory=list)
     last_checked:str=Field(default_factory=lambda:datetime.now(timezone.utc).isoformat()); live_evidence_available:bool=False
     claims_checked:list[ClaimAssessment]=Field(default_factory=list)
+    research_questions:list[str]=Field(default_factory=list)
+    research_data:list[ResearchData]=Field(default_factory=list)
 class ArticleClaim(BaseModel):
     claim:str; verdict:Verdict; confidence:int=Field(ge=0,le=100); summary:str
 class ArticleFactCheck(BaseModel):
