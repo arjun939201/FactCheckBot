@@ -6,7 +6,7 @@ from datetime import datetime,timezone
 from pydantic import ValidationError
 from ..models.factcheck import FactCheckResult,ArticleFactCheck,MediaAttachment
 from ..config import get_settings
-from .groq import groq_json,factcheck_instruction,decompose_claims,plan_resources
+from .groq import groq_json,factcheck_instruction,decompose_claims,plan_resources,assess_research_evidence
 from .search import search_web, SearchError, SearchRelevanceError
 
 MAX_MEDIA_CONTEXT=12000
@@ -137,14 +137,31 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
         ),
         reverse=True,
     )
+    # The search engine returns candidate pages. A bounded semantic pass decides
+    # which sources answer the framed questions and builds evidence-linked answers.
+    for i,item in enumerate(evidence,1):
+        item["evidence_id"]=f"E{i:02d}"
+    semantic_research = {}
+    try:
+        semantic_research = await assess_research_evidence(primary_text, research_questions, evidence)
+    except Exception:
+        # Keep the workflow available if the assessor is rate-limited; retain the
+        # explicit relevance metadata for the final synthesis to judge cautiously.
+        semantic_research = {}
+    if semantic_research.get("relevant_evidence_ids"):
+        relevant_ids=set(semantic_research["relevant_evidence_ids"])
+        evidence=[x for x in evidence if x["evidence_id"] in relevant_ids]
+        for item in evidence:
+            item["relevant"]=True
+            item["relevance_reason"]="Semantically matched to a framed research question"
+    elif semantic_research:
+        evidence=[]
     if not evidence:
-        if relevance_gap:
+        if relevance_gap or semantic_research:
             raise RuntimeError("Search returned pages, but none were sufficiently relevant to answer this input. Try a more specific query or add the key entity, location, or timeframe.")
         raise RuntimeError("Live search providers returned no usable results. Search may be temporarily unavailable; please retry.")
 
-    # Give every retrieved source one stable ID before any AI research/synthesis step.
-    for i,item in enumerate(evidence,1):
-        item["evidence_id"]=f"E{i:02d}"
+    # Keep the stable IDs assigned before semantic filtering.
     evidence_by_url={item["url"]:item for item in evidence}
 
     research_packets=[]
@@ -167,13 +184,14 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
 
     # Raw research extraction is valuable for complex investigations, but a
     # simple question can go directly from retrieved evidence to synthesis.
-    raw_items=[]
+    raw_items=list(semantic_research.get("question_answers", [])) if isinstance(semantic_research.get("question_answers", []), list) else []
     if not simple_question:
         from .groq import research_instruction
         raw_research = await groq_json(research_instruction(primary_text,research_questions,research_packets))
-        raw_items = raw_research.get("research_data",[]) if isinstance(raw_research,dict) else []
-        if not isinstance(raw_items,list):raw_items=[]
-        raw_items=[x for x in raw_items if isinstance(x,dict)][:5]
+        extracted_items = raw_research.get("research_data",[]) if isinstance(raw_research,dict) else []
+        if not isinstance(extracted_items,list):extracted_items=[]
+        raw_items = raw_items + [x for x in extracted_items if isinstance(x,dict)]
+        raw_items=raw_items[:8]
 
     evidence_for_model=[]
     excerpt_limit=min(get_settings().groq_evidence_excerpt_chars,900) if simple_question else get_settings().groq_evidence_excerpt_chars
