@@ -41,8 +41,8 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
     # context/evidence, not a second prompt that should generate independent claims.
     primary_for_model=primary_text[:9000]
     # Explicit questions must remain questions, not be converted into factual claims.
-    explicit_question = bool(re.search(r"\\?\\s*$", primary_text)) or bool(
-        re.match(r"(?i)^(is|are|was|were|will|can|could|does|do|did|has|have|who|what|when|where|which|why|how)\\b", primary_text)
+    explicit_question = bool(re.search(r"\?\s*$", primary_text)) or bool(
+        re.match(r"(?i)^(is|are|was|were|will|can|could|does|do|did|has|have|who|what|when|where|which|why|how)\b", primary_text)
     )
     claims=await decompose_claims(primary_for_model,prefs,media_only=media_only)
     if explicit_question and claims:
