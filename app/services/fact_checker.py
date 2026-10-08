@@ -6,7 +6,7 @@ from pydantic import ValidationError
 from ..models.factcheck import FactCheckResult,ArticleFactCheck,MediaAttachment
 from ..config import get_settings
 from .groq import groq_json,factcheck_instruction,decompose_claims,plan_resources
-from .search import search_web
+from .search import search_web, SearchError, SearchRelevanceError
 
 MAX_MEDIA_CONTEXT=12000
 
@@ -79,16 +79,34 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
     search_queries=list(research_questions)
     if explicit_question and primary_text not in search_queries:
         search_queries.insert(0, primary_text)
-    question_batches = await asyncio.gather(*[
+    batch_results = await asyncio.gather(*[
         search_web(q, resource_plan=resource_plan) for q in search_queries
-    ])
+    ], return_exceptions=True)
+    question_batches=[]
+    relevance_gap=False
+    provider_gap=False
+    for result in batch_results:
+        if isinstance(result, SearchRelevanceError):
+            relevance_gap=True
+            question_batches.append([])
+        elif isinstance(result, SearchError):
+            provider_gap=True
+            question_batches.append([])
+        elif isinstance(result, Exception):
+            # Do not silently misrepresent unexpected failures as weak evidence.
+            raise result
+        else:
+            question_batches.append(result)
     evidence=[];seen=set()
     for batch in question_batches:
         for item in batch:
             if item["url"] not in seen:
                 seen.add(item["url"])
                 evidence.append(item)
-    if not evidence:raise RuntimeError("Live web evidence retrieval returned no results")
+    if not evidence:
+        if relevance_gap:
+            raise RuntimeError("Search returned pages, but none were sufficiently relevant to answer this input. Try a more specific query or add the key entity, location, or timeframe.")
+        raise RuntimeError("Live search providers returned no usable results. Search may be temporarily unavailable; please retry.")
 
     # Give every retrieved source one stable ID before any AI research/synthesis step.
     for i,item in enumerate(evidence,1):
