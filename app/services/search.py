@@ -110,7 +110,7 @@ def _plan_queries(query, plan):
         if d: domains.append(d)
     for rtype in plan.get("resource_types",[])[:8]:
         domains.extend(_RESOURCE_DOMAINS.get(str(rtype).lower(),[]))
-    domain_queries=[f"{query} site:{d}" for d in dict.fromkeys(domains)][:8]
+    domain_queries=[f"{query} site:{d}" for d in dict.fromkeys(domains)][:4]
     return list(dict.fromkeys(terms+domain_queries))
 
 def _queries(query):
@@ -123,7 +123,7 @@ async def search_web(query:str,max_results:int|None=None,resource_plan:dict|None
     max_results=max(2,min(max_results,30))
     queries=_queries(query)
     if resource_plan:
-        queries=list(dict.fromkeys(queries+_plan_queries(query,resource_plan)))[:10]
+        queries=list(dict.fromkeys(queries+_plan_queries(query,resource_plan)))[:4]
 
     # Google News RSS is a free direct retrieval path and does not depend on
     # DDGS/search-engine backends. Run it independently so DDGS failures cannot
@@ -139,8 +139,11 @@ async def search_web(query:str,max_results:int|None=None,resource_plan:dict|None
 
     # DDGS is opportunistic only. Render/network failures are expected and must
     # never erase successful Google News evidence.
+    # DDGS/search-engine backends are opportunistic and can be slow on
+    # hosted networks. Probe only the first two queries instead of multiplying
+    # provider failures across every planner-generated query.
     ddgs_batches=await asyncio.gather(
-        *[_ddgs(q,max_results) for q in queries],
+        *[_ddgs(q,min(max_results,6)) for q in queries[:2]],
         return_exceptions=True,
     )
     ddgs_results=[]
