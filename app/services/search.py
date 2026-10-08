@@ -89,7 +89,7 @@ def _relevance(query,item):
     return score
 
 _RESOURCE_DOMAINS = {
-    "government/official":["gov.in","india.gov.in","pib.gov.in","pmo.gov.in"],
+    "government/official":["gov.in","india.gov.in","pib.gov.in","pmo.gov.in","presidentofindia.gov.in","sansad.in","loksabha.nic.in","rajyasabha.nic.in"],
     "election authority":["eci.gov.in"],
     "courts/law":["sci.gov.in","main.sci.gov.in","indiacode.nic.in"],
     "legislation/regulations":["indiacode.nic.in","egazette.nic.in"],
