@@ -211,8 +211,16 @@ FINAL STAGE: Synthesize the research into the best-supported answer to the user'
             x=by_id[eid];mapped_contra.append({"evidence_id":eid,"claim":c["claim"],"excerpt":x["content"],"url":x["url"],"title":x["title"],"publisher":x["publisher"],"source_type":x["source_type"],"source_quality":x["source_quality"],"source_tier":x["source_tier"],"relevance_score":x.get("relevance_score",0),"relevance_reason":x.get("relevance_reason","")})
     data["supporting_evidence"]=mapped_support;data["contradicting_evidence"]=mapped_contra
     used={x["url"] for x in mapped_support+mapped_contra}
-    data["sources"]=[{"title":x["title"],"publisher":x["publisher"],"url":x["url"],"source_type":x["source_type"],"source_quality":x["source_quality"],"source_tier":x["source_tier"],"corroboration_count":sum(1 for y in allowed_evidence if y["publisher"]==x["publisher"]),"relevance_score":x.get("relevance_score",0),"relevance_reason":x.get("relevance_reason","")} for x in evidence if x["url"] in used][:12]
+    # Questions must never lose retrieved sources just because the synthesis
+    # model forgot to populate its source array. If live evidence exists,
+    # preserve the strongest retrieved sources deterministically.
+    relevant_question_evidence=[x for x in allowed_evidence if x.get("relevant",False)]
+    source_pool=(relevant_question_evidence or allowed_evidence) if explicit_question else [x for x in evidence if x["url"] in used]
+    data["sources"]=[{"title":x["title"],"publisher":x["publisher"],"url":x["url"],"source_type":x["source_type"],"source_quality":x["source_quality"],"source_tier":x["source_tier"],"corroboration_count":sum(1 for y in allowed_evidence if y["publisher"]==x["publisher"]),"relevance_score":x.get("relevance_score",0),"relevance_reason":x.get("relevance_reason","")} for x in source_pool[:8]]
     data["live_evidence_available"]=bool(evidence)
+    if explicit_question and not relevant_question_evidence:
+        data["summary"]="Live sources were retrieved, but none were sufficiently relevant to establish the answer to this question."
+        data.setdefault("uncertainties",[]).append("Live search succeeded, but no sufficiently relevant evidence was found.")
     # The user supplied text is the canonical subject of the report. Never let
     # media-derived wording replace the primary investigation title/claim.
     data["claim"]=primary_text if explicit_question else (claims[0]["claim"] if claims else primary_text)
@@ -234,7 +242,8 @@ FINAL STAGE: Synthesize the research into the best-supported answer to the user'
     data["resource_plan"]=resource_plan
     if not data["sources"] and data.get("verdict") not in {"OPINION","PREDICTION"}:
         data["verdict"]="UNVERIFIED";data["confidence"]=min(int(data.get("confidence",0)),50)
-        data.setdefault("uncertainties",[]).append("Retrieved sources did not support a grounded evidence mapping for the primary claim.")
+        if not explicit_question:
+            data.setdefault("uncertainties",[]).append("Retrieved sources did not support a grounded evidence mapping for the primary claim.")
     data["last_checked"]=datetime.now(timezone.utc).isoformat()
     try:return FactCheckResult.model_validate(data)
     except ValidationError as e:raise RuntimeError("The AI returned an invalid fact-check result") from e
