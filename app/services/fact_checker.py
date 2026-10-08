@@ -50,45 +50,45 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
     if not research_questions:
         research_questions = [f"What evidence directly answers or verifies this input: {primary_text[:500]}?"]
 
+    # Search each research question first. These results become the raw research dataset.
     question_batches = await asyncio.gather(*[search_web(q) for q in research_questions])
+    evidence=[];seen=set()
+    for batch in question_batches:
+        for item in batch:
+            if item["url"] not in seen:
+                seen.add(item["url"])
+                evidence.append(item)
+    if not evidence:raise RuntimeError("Live web evidence retrieval returned no results")
+
+    # Give every retrieved source one stable ID before any AI research/synthesis step.
+    for i,item in enumerate(evidence,1):
+        item["evidence_id"]=f"E{i:02d}"
+    evidence_by_url={item["url"]:item for item in evidence}
+
     research_packets=[]
     for question,batch in zip(research_questions,question_batches):
         packet=[]
         for item in batch[:8]:
+            source=evidence_by_url.get(item["url"])
+            if not source:continue
             packet.append({
-                "evidence_id": item.get("evidence_id",""),
-                "title": item.get("title",""),
-                "publisher": item.get("publisher",""),
-                "url": item.get("url",""),
-                "content": str(item.get("content",""))[:get_settings().groq_evidence_excerpt_chars],
-                "source_quality": item.get("source_quality",0),
-                "source_tier": item.get("source_tier","Other"),
-                "relevance_score": item.get("relevance_score",0)
+                "evidence_id": source["evidence_id"],
+                "title": source.get("title",""),
+                "publisher": source.get("publisher",""),
+                "url": source["url"],
+                "content": str(source.get("content",""))[:get_settings().groq_evidence_excerpt_chars],
+                "source_quality": source.get("source_quality",0),
+                "source_tier": source.get("source_tier","Other"),
+                "relevance_score": source.get("relevance_score",0)
             })
         research_packets.append({"question":question,"web_results":packet})
 
+    # Raw research answers are generated only from the retrieved web packets.
     raw_research = await groq_json(research_instruction(primary_text,research_questions,research_packets))
     raw_items = raw_research.get("research_data",[]) if isinstance(raw_research,dict) else []
-    if not isinstance(raw_items,list): raw_items=[]
+    if not isinstance(raw_items,list):raw_items=[]
     raw_items=[x for x in raw_items if isinstance(x,dict)][:5]
 
-    # Search only the primary claims. Never search OCR/visual questions as separate claims
-    # when the user already supplied a textual investigation subject.
-    # Retain direct claim searches for precise verdict mapping.
-    claim_batches=await asyncio.gather(*[search_web(c["claim"]) for c in claims])
-    evidence=[];seen=set()
-    for packet in research_packets:
-        for item in packet["web_results"]:
-            if item["url"] not in seen:
-                seen.add(item["url"]);evidence.append(item)
-    for batch in claim_batches:
-        for item in batch:
-            if item["url"] not in seen:
-                seen.add(item["url"]);evidence.append(item)
-    if not evidence:raise RuntimeError("Live web evidence retrieval returned no results")
-    for i,item in enumerate(evidence,1):item["evidence_id"]=f"E{i:02d}"
-
-    evidence_for_model=[]
     excerpt_limit=get_settings().groq_evidence_excerpt_chars
     for item in evidence[:12]:
         evidence_for_model.append({
