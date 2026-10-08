@@ -88,15 +88,42 @@ def _relevance(query,item):
     item["relevant"]=bool(exact or len(overlap)>=required)
     return score
 
+_RESOURCE_DOMAINS = {
+    "government/official":["gov.in","india.gov.in","pib.gov.in","pmo.gov.in"],
+    "election authority":["eci.gov.in"],
+    "courts/law":["sci.gov.in","main.sci.gov.in","indiacode.nic.in"],
+    "legislation/regulations":["indiacode.nic.in","egazette.nic.in"],
+    "academic/research":["pubmed.ncbi.nlm.nih.gov","nature.com","sciencedirect.com","arxiv.org"],
+    "medical/health authorities":["who.int","cdc.gov","nih.gov","pubmed.ncbi.nlm.nih.gov"],
+    "financial/regulatory":["rbi.org.in","sebi.gov.in","mca.gov.in"],
+    "reputable news":["reuters.com","apnews.com","bbc.com"],
+    "company/technical docs":["docs.github.com","developer.mozilla.org","python.org"],
+    "standards/specifications":["ietf.org","w3.org","iso.org"],
+    "security advisories":["cve.org","nvd.nist.gov","github.com"],
+    "datasets/statistics":["data.gov.in","data.worldbank.org","imf.org"],
+}
+def _plan_queries(query, plan):
+    terms=[f"{query} {str(x).strip()}"[:300] for x in plan.get("search_strategy",[])[:4] if str(x).strip()]
+    domains=[]
+    for d in plan.get("preferred_domains",[])[:8]:
+        d=str(d).strip().lower().replace("https://","").replace("http://","").split("/")[0]
+        if d: domains.append(d)
+    for rtype in plan.get("resource_types",[])[:8]:
+        domains.extend(_RESOURCE_DOMAINS.get(str(rtype).lower(),[]))
+    domain_queries=[f"{query} site:{d}" for d in dict.fromkeys(domains)][:8]
+    return list(dict.fromkeys(terms+domain_queries))
+
 def _queries(query):
     q=" ".join(query.split());parts=[p.strip() for p in re.split(r"(?<=[.!?])\s+",q) if p.strip()]
     # Keep the user's full claim first; sentence splits are only secondary probes.
     return list(dict.fromkeys([q]+parts[:1]+([q[:180]] if len(q)>180 else [])))[:3]
 
-async def search_web(query:str,max_results:int|None=None)->list[dict]:
+async def search_web(query:str,max_results:int|None=None,resource_plan:dict|None=None)->list[dict]:
     max_results=max_results or get_settings().max_search_results
     max_results=max(2,min(max_results,30))
     queries=_queries(query)
+    if resource_plan:
+        queries=list(dict.fromkeys(queries+_plan_queries(query,resource_plan)))[:10]
     batches=await asyncio.gather(*[_ddgs(q,max_results) for q in queries],*[_google_news(q,max_results) for q in queries])
     results=_normalise([item for batch in batches for item in batch])
     if not results:raise SearchError("No live web evidence was retrieved")
