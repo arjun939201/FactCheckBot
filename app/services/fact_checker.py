@@ -154,7 +154,6 @@ FINAL STAGE: Synthesize the research into the best-supported answer to the user'
 
     # The model may still try to turn media observations into new fact checks.
     # Reject those when text is the primary subject.
-    import re
     def tokens(value):
         return set(re.findall(r"[a-z0-9]+",str(value).lower()))
     primary_tokens=[tokens(c.get("claim","")) for c in claims]
