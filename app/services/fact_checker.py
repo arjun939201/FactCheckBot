@@ -71,8 +71,11 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
     resource_plan.setdefault("search_strategy", [])
     resource_plan.setdefault("rationale", "")
     # Search each research question using the selected resource strategy.
+    search_queries=list(research_questions)
+    if explicit_question and primary_text not in search_queries:
+        search_queries.insert(0, primary_text)
     question_batches = await asyncio.gather(*[
-        search_web(q, resource_plan=resource_plan) for q in research_questions
+        search_web(q, resource_plan=resource_plan) for q in search_queries
     ])
     evidence=[];seen=set()
     for batch in question_batches:
@@ -88,7 +91,7 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
     evidence_by_url={item["url"]:item for item in evidence}
 
     research_packets=[]
-    for question,batch in zip(research_questions,question_batches):
+    for question,batch in zip(search_queries,question_batches):
         packet=[]
         for item in batch[:8]:
             source=evidence_by_url.get(item["url"])
@@ -147,7 +150,7 @@ FINAL STAGE: Synthesize the research into the best-supported answer to the user'
         try:x["source_quality"]=max(0,min(100,int(x.get("source_quality",0))))
         except (TypeError,ValueError):x["source_quality"]=0
     strong_evidence=[x for x in evidence if x.get("relevant",True)]
-    allowed_evidence=strong_evidence or []
+    allowed_evidence=(evidence if explicit_question else (strong_evidence or []))
     known={x["url"] for x in allowed_evidence};by_id={x["evidence_id"]:x for x in allowed_evidence}
     for k in ("sources","supporting_evidence","contradicting_evidence"):
         data[k]=[x for x in _object_list(data.get(k,[])) if x.get("url") in known]
