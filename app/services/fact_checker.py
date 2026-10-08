@@ -263,6 +263,27 @@ FINAL STAGE: Synthesize the research into the best-supported answer to the user'
         if not explicit_question:
             data.setdefault("uncertainties",[]).append("Retrieved sources did not support a grounded evidence mapping for the primary claim.")
     data["last_checked"]=datetime.now(timezone.utc).isoformat()
+
+    # LLMs sometimes return confidence as a fraction (0.2) or decimal
+    # percentage (72.5), while the API schema requires an integer 0-100.
+    # Normalize confidence fields at the boundary rather than failing the request.
+    def _confidence_int(value, default=0):
+        try:
+            number=float(value)
+        except (TypeError,ValueError):
+            return default
+        if not (number == number):  # NaN
+            return default
+        if 0 <= number <= 1:
+            number *= 100
+        return max(0,min(100,int(round(number))))
+
+    if "confidence" in data:
+        data["confidence"]=_confidence_int(data["confidence"])
+    for item in data.get("claims_checked",[]):
+        if isinstance(item,dict) and "confidence" in item:
+            item["confidence"]=_confidence_int(item["confidence"])
+
     try:return FactCheckResult.model_validate(data)
     except ValidationError as e:raise RuntimeError("The AI returned an invalid fact-check result") from e
 
@@ -297,4 +318,15 @@ Retrieved evidence:
     if not isinstance(raw_sources,list): raw_sources=[]
     raw_sources=[x if isinstance(x,dict) else {"url":str(x)} for x in raw_sources]
     data["article_url"]=url;data["sources"]=[x for x in raw_sources if x.get("url") in known];data["live_evidence_available"]=True;data["last_checked"]=datetime.now(timezone.utc).isoformat()
+    def _confidence_int(value, default=0):
+        try:number=float(value)
+        except (TypeError,ValueError):return default
+        if not (number == number):return default
+        if 0 <= number <= 1:number *= 100
+        return max(0,min(100,int(round(number))))
+    if "overall_confidence" in data:
+        data["overall_confidence"]=_confidence_int(data["overall_confidence"])
+    for item in data.get("claims_checked",[]):
+        if isinstance(item,dict) and "confidence" in item:
+            item["confidence"]=_confidence_int(item["confidence"])
     return ArticleFactCheck.model_validate(data)
