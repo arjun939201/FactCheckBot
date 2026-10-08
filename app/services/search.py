@@ -163,21 +163,17 @@ async def search_web(query:str,max_results:int|None=None,resource_plan:dict|None
     if not results:raise SearchError("No live web evidence was retrieved from available search providers")
     for item in results:_relevance(query,item)
 
-    relevant=[x for x in results if x.get("relevant")]
-    # Never pass unrelated search results to the synthesis model just to fill a
-    # source list. An empty batch allows other research questions to contribute;
-    # if all batches are empty, the caller can report a relevance gap honestly.
-    if not relevant:
-        logger.info("Search returned pages but none passed relevance checks")
-        raise SearchRelevanceError("Pages were retrieved, but none passed relevance checks")
-    ranked=sorted(relevant,key=lambda x:(x.get("relevance_score",0),x["source_quality"],len(x["content"])),reverse=True)
+    # Lexical overlap is only a retrieval hint. Keep a bounded candidate pool
+    # for the question/evidence assessment stage; do not reject a page solely
+    # because it uses different wording from the research question.
+    ranked=sorted(results,key=lambda x:(x.get("relevance_score",0),x["source_quality"],len(x["content"])),reverse=True)
     seen_urls=set();seen_domains=set();out=[]
     for item in ranked:
         if item["url"] in seen_urls:continue
         domain=item["publisher"]
         if domain in seen_domains and item["source_quality"]<90:continue
         out.append(item);seen_urls.add(item["url"]);seen_domains.add(domain)
-        if len(out)>=max_results:break
+        if len(out)>=min(max_results,15):break
     counts=Counter(x["publisher"] for x in out)
     for i,x in enumerate(out,1):
         x["evidence_id"]=f"E{i:02d}";x["corroboration_count"]=counts[x["publisher"]]
