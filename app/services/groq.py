@@ -180,3 +180,32 @@ Retrieved evidence (ONLY permitted external evidence). Prefer evidence with high
 Return ONE coherent report. claims_checked must correspond only to the primary claim units and should normally contain one assessment when the user supplied one substantive claim. Use exact evidence IDs only. Never invent IDs, sources, quotations, dates, or facts. If evidence is insufficient, use UNVERIFIED. Do not write a report about questions that the user did not ask.
 Return exactly one JSON object using this schema:
 {json.dumps(SCHEMA)}"""
+
+    
+async def breakdown_questions(text: str, prefs: dict) -> list[str]:
+    prompt = f"""Break the user's input into the smallest set of answerable research questions needed to investigate it.
+USER INPUT: {text[:get_settings().groq_claim_input_chars]!r}
+PREFERENCES: {json.dumps(prefs)}
+Rules:
+- The user's input is compulsory and is the only investigation subject.
+- Questions must directly help answer the input.
+- Prefer concrete, independently researchable questions.
+- Do not invent allegations, people, dates, locations, motives, or subclaims not present or logically necessary.
+- For a simple factual claim, return 1-3 questions. For a complex claim, return up to 5.
+Return ONLY JSON: {{"questions":["string"]}}"""
+    data = await groq_json(prompt)
+    if not isinstance(data, dict): return []
+    return [str(x).strip() for x in data.get("questions",[]) if str(x).strip()][:5]
+
+
+def research_instruction(input_text: str, questions: list[str], research_packets: list[dict]) -> str:
+    return f"""You are the research extraction stage of an evidence-first fact checker.
+USER INPUT:
+{input_text[:9000]}
+RESEARCH QUESTIONS:
+{json.dumps(questions, ensure_ascii=False)}
+RAW WEB RESEARCH:
+{json.dumps(research_packets, ensure_ascii=False)}
+For EACH research question, answer ONLY from the supplied web research. Do not use model memory. If the supplied research does not answer a question, say "Insufficient retrieved evidence." Keep answers factual and traceable to evidence IDs. Do not give a final verdict yet.
+Return ONLY JSON:
+{{"research_data":[{{"question":"string","answer":"string","evidence_ids":["E01"]}}]}}"""
