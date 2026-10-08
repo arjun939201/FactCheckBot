@@ -3,7 +3,7 @@ from fastapi import APIRouter,HTTPException,UploadFile,File,Form,Request,Respons
 from ..models.factcheck import FactCheckRequest,URLFactCheckRequest
 from ..services.fact_checker import run_fact_check,run_url_fact_check
 from ..services.media import extract_media,MediaCapabilityError,MediaRateLimitError,MediaCallBudget
-from ..services.groq import GroqPayloadTooLargeError,GroqProviderError
+from ..services.groq import GroqPayloadTooLargeError,GroqProviderError,GroqRateLimitError
 from ..services.search import SearchError
 from ..config import get_settings
 from .history import owner, store
@@ -25,6 +25,8 @@ async def fact_check(req:FactCheckRequest, request: Request, response: Response)
     try:r=await run_fact_check(req.text,prefs(req))
     except GroqPayloadTooLargeError as e:
         raise HTTPException(413,str(e)) from e
+    except GroqRateLimitError as e:
+        raise HTTPException(429,str(e),headers={"Retry-After":str(max(1,int(e.retry_after)))}) from e
     except GroqProviderError as e:
         raise HTTPException(503,str(e)) from e
     except Exception as e:
@@ -72,6 +74,8 @@ async def media_fact_check(
         raise HTTPException(503,str(e)) from e
     except GroqPayloadTooLargeError as e:
         raise HTTPException(413,str(e)) from e
+    except GroqRateLimitError as e:
+        raise HTTPException(429,str(e),headers={"Retry-After":str(max(1,int(e.retry_after)))}) from e
     except GroqProviderError as e:
         raise HTTPException(503,str(e)) from e
     except SearchError as e:
