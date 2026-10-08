@@ -266,6 +266,36 @@ Return ONLY JSON: {{"questions":["string"]}}"""
     return questions
 
 
+async def assess_research_evidence(input_text: str, questions: list[str], candidates: list[dict]) -> dict:
+    """Semantically assess a bounded candidate pool and build question-answer evidence links."""
+    compact = [{
+        "evidence_id": str(x.get("evidence_id", "")),
+        "title": str(x.get("title", ""))[:220],
+        "publisher": str(x.get("publisher", ""))[:100],
+        "url": str(x.get("url", ""))[:400],
+        "content": str(x.get("content", ""))[:900],
+        "source_type": str(x.get("source_type", "Other")),
+    } for x in candidates[:18]]
+    prompt = f"""You are the evidence relevance and research-answer stage.
+ORIGINAL USER QUESTION/CLAIM: {input_text[:1200]}
+FRAMED RESEARCH QUESTIONS: {json.dumps(questions[:5], ensure_ascii=False)}
+CANDIDATE WEB SOURCES: {json.dumps(compact, ensure_ascii=False)}
+For each candidate, decide whether its title/content substantively helps answer at least one framed research question. Judge meaning and context, not shared keywords. A source that merely mentions the same word, a different country/jurisdiction, or a different entity is NOT relevant. A source can be relevant even when it uses different wording.
+Use only the supplied source content. Do not use model memory. Do not infer source content from URL/title alone. Mark a source relevant only when its provided content or title directly bears on the question; titles alone are weaker evidence.
+Then build a concise answer to each research question using only relevant source evidence. Cite exact evidence IDs. If evidence does not answer a question, return an empty answer and empty evidence_ids. Never invent facts, quotations, dates, or source IDs.
+Return ONLY JSON:
+{{"relevant_evidence_ids":["E01"],"question_answers":[{{"question":"string","answer":"string","evidence_ids":["E01"],"status":"answered|partial|insufficient"}}]}}"""
+    data = await groq_json(prompt)
+    if not isinstance(data, dict):
+        return {}
+    valid_ids = {x["evidence_id"] for x in candidates if x.get("evidence_id")}
+    data["relevant_evidence_ids"] = [x for x in data.get("relevant_evidence_ids", []) if x in valid_ids]
+    for item in data.get("question_answers", []):
+        if isinstance(item, dict):
+            item["evidence_ids"] = [x for x in item.get("evidence_ids", []) if x in valid_ids]
+    return data
+
+
 def research_instruction(input_text: str, questions: list[str], research_packets: list[dict]) -> str:
     return f"""You are the research extraction stage of an evidence-first fact checker.
 USER INPUT:
