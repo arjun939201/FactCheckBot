@@ -159,6 +159,7 @@ FINAL STAGE: Synthesize the research into the best-supported answer to the user'
     primary_tokens=[tokens(c.get("claim","")) for c in claims]
     def relevant_claim(c):
         if not isinstance(c,dict) or not str(c.get("claim","")).strip():return False
+        if explicit_question:return False
         if media_only:return str(c.get("content_type","")).upper()!="QUESTION"
         ct=str(c.get("content_type","")).upper()
         if ct=="QUESTION":return False
@@ -175,7 +176,7 @@ FINAL STAGE: Synthesize the research into the best-supported answer to the user'
         c["source_quality"]=round(sum(x["source_quality"] for x in refs)/len(refs)) if refs else 0
         c["corroboration_count"]=len({x["publisher"] for x in refs})
         valid_claims.append(c)
-    if not valid_claims:
+    if not valid_claims and not explicit_question:
         # Never let an image create an empty/divided report when the user supplied text.
         valid_claims=[{
             "claim":claims[0]["claim"],
@@ -201,12 +202,11 @@ FINAL STAGE: Synthesize the research into the best-supported answer to the user'
     data["live_evidence_available"]=bool(evidence)
     # The user supplied text is the canonical subject of the report. Never let
     # media-derived wording replace the primary investigation title/claim.
-    data["claim"]=claims[0]["claim"] if claims else primary_text
+    data["claim"]=primary_text if explicit_question else (claims[0]["claim"] if claims else primary_text)
     if explicit_question:
         data["content_type"]="QUESTION"
-        # A question receives an answer, not a truth-status verdict.
+        # Compatibility placeholder; the UI renders questions as answers, not verdicts.
         data["verdict"]="UNVERIFIED"
-        data["confidence"]=0
     data["report_title"]="Fact Check Report" if not media_only else "Media Fact Check Report"
     data["attachments"]=[x.model_dump(mode="json") for x in attachments]
     valid_ids={x["evidence_id"] for x in evidence}
