@@ -86,8 +86,20 @@ def _relevance(query,item):
     score=min(100, round(coverage*65 + min(title_overlap,3)*8 + exact*25))
     required=1 if len(qt)<=2 else 2
     item["relevance_score"]=score
-    item["relevance_reason"]=("Exact phrase" if exact else f"{len(overlap)}/{len(qt)} key terms match")
-    item["relevant"]=bool(exact or len(overlap)>=required)
+    item["relevance_reason"]=(
+        "Exact phrase" if exact else
+        f"{len(overlap)}/{len(qt)} key terms match; {title_overlap} in title"
+    )
+    # Broad body-text overlap alone is weak evidence. For multi-term queries,
+    # require both a meaningful score and at least one matching title term;
+    # this reduces results that mention keywords only incidentally.
+    item["relevant"]=bool(
+        exact or (
+            len(overlap)>=required and
+            title_overlap>=1 and
+            score>=55
+        )
+    )
     return score
 
 # This is a resource catalogue, not a topic-specific search script. The planner
