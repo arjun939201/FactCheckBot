@@ -44,20 +44,25 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
     explicit_question = bool(re.search(r"\?\s*$", primary_text)) or bool(
         re.match(r"(?i)^(is|are|was|were|will|can|could|does|do|did|has|have|who|what|when|where|which|why|how)\b", primary_text)
     )
-    claims=await decompose_claims(primary_for_model,prefs,media_only=media_only)
-    if explicit_question and claims:
-        for claim in claims:
-            if isinstance(claim,dict):
-                claim["content_type"]="QUESTION"
-    if not claims:
-        claims=[{"claim":primary_text,"content_type":prefs.get("content_mode","auto")}]
-    claims=claims[:4]
-
-    # Required workflow: input -> question breakdown -> web search -> raw research data -> synthesis/verdict.
-    from .groq import breakdown_questions, research_instruction
-    research_questions = await breakdown_questions(primary_text, prefs)
-    if not research_questions:
-        research_questions = [f"What evidence directly answers or verifies this input: {primary_text[:500]}?"]
+    # Simple questions are deterministic enough to avoid an AI decomposition call.
+    # This materially reduces Groq TPM usage and preserves the exact user wording.
+    simple_question = explicit_question and len(primary_text) <= 300 and not media_only
+    if simple_question:
+        claims=[{"claim":primary_text,"content_type":"QUESTION"}]
+        research_questions=[primary_text]
+    else:
+        claims=await decompose_claims(primary_for_model,prefs,media_only=media_only)
+        if explicit_question and claims:
+            for claim in claims:
+                if isinstance(claim,dict):
+                    claim["content_type"]="QUESTION"
+        if not claims:
+            claims=[{"claim":primary_text,"content_type":prefs.get("content_mode","auto")}]
+        claims=claims[:4]
+        from .groq import breakdown_questions
+        research_questions = await breakdown_questions(primary_text, prefs)
+        if not research_questions:
+            research_questions = [f"What evidence directly answers or verifies this input: {primary_text[:500]}?"]
 
     # Select evidence resources for this context before searching.
     try:
@@ -108,15 +113,20 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
             })
         research_packets.append({"question":question,"web_results":packet})
 
-    # Raw research answers are generated only from the retrieved web packets.
-    raw_research = await groq_json(research_instruction(primary_text,research_questions,research_packets))
-    raw_items = raw_research.get("research_data",[]) if isinstance(raw_research,dict) else []
-    if not isinstance(raw_items,list):raw_items=[]
-    raw_items=[x for x in raw_items if isinstance(x,dict)][:5]
+    # Raw research extraction is valuable for complex investigations, but a
+    # simple question can go directly from retrieved evidence to synthesis.
+    raw_items=[]
+    if not simple_question:
+        from .groq import research_instruction
+        raw_research = await groq_json(research_instruction(primary_text,research_questions,research_packets))
+        raw_items = raw_research.get("research_data",[]) if isinstance(raw_research,dict) else []
+        if not isinstance(raw_items,list):raw_items=[]
+        raw_items=[x for x in raw_items if isinstance(x,dict)][:5]
 
     evidence_for_model=[]
-    excerpt_limit=get_settings().groq_evidence_excerpt_chars
-    for item in evidence[:12]:
+    excerpt_limit=min(get_settings().groq_evidence_excerpt_chars,900) if simple_question else get_settings().groq_evidence_excerpt_chars
+    evidence_limit=8 if simple_question else 12
+    for item in evidence[:evidence_limit]:
         evidence_for_model.append({
             "evidence_id":item["evidence_id"],"title":item.get("title",""),
             "publisher":item.get("publisher",""),"url":item["url"],
