@@ -80,8 +80,6 @@ def _relevance(query,item):
     title_overlap=len(qt & _terms(str(item.get('title',''))))
     exact=1 if q in hay and len(q)>12 else 0
     score=min(100, round(coverage*65 + min(title_overlap,3)*8 + exact*25))
-    # For multi-entity claims, require at least two meaningful anchors unless
-    # the exact phrase was found. This blocks unrelated acronym/keyword hits.
     required=1 if len(qt)<=2 else 2
     item["relevance_score"]=score
     item["relevance_reason"]=("Exact phrase" if exact else f"{len(overlap)}/{len(qt)} key terms match")
@@ -102,21 +100,38 @@ _RESOURCE_DOMAINS = {
     "security advisories":["cve.org","nvd.nist.gov","github.com"],
     "datasets/statistics":["data.gov.in","data.worldbank.org","imf.org"],
 }
+_KNOWN_PLANNER_DOMAINS={
+    d for domains in _RESOURCE_DOMAINS.values() for d in domains
+} | {"thehindu.com","timesofindia.com","indianexpress.com","reuters.com","apnews.com","bbc.com","factcheck.org"}
+
 def _plan_queries(query, plan):
     terms=[f"{query} {str(x).strip()}"[:300] for x in plan.get("search_strategy",[])[:4] if str(x).strip()]
     domains=[]
     for d in plan.get("preferred_domains",[])[:8]:
         d=str(d).strip().lower().replace("https://","").replace("http://","").split("/")[0]
-        if d: domains.append(d)
+        if d in _KNOWN_PLANNER_DOMAINS: domains.append(d)
     for rtype in plan.get("resource_types",[])[:8]:
         domains.extend(_RESOURCE_DOMAINS.get(str(rtype).lower(),[]))
     domain_queries=[f"{query} site:{d}" for d in dict.fromkeys(domains)][:4]
     return list(dict.fromkeys(terms+domain_queries))
 
 def _queries(query):
-    q=" ".join(query.split());parts=[p.strip() for p in re.split(r"(?<=[.!?])\s+",q) if p.strip()]
-    # Keep the user's full claim first; sentence splits are only secondary probes.
-    return list(dict.fromkeys([q]+parts[:1]+([q[:180]] if len(q)>180 else [])))[:3]
+    q=" ".join(query.split())
+    parts=[p.strip() for p in re.split(r"(?<=[.!?])\s+",q) if p.strip()]
+    queries=[q]+parts[:1]
+    low=q.lower()
+    # Questions about who forms India's central/Union government need evidence
+    # about the Union executive, not merely pages mentioning the party.
+    if "central government" in low or "union government" in low:
+        queries.extend([
+            f"{q} Union Government India Prime Minister Council of Ministers",
+            f"{q} India government formation Lok Sabha majority",
+            f"{q} BJP NDA Union Government India 2026",
+        ])
+    elif re.match(r"(?i)^(is|are|was|were|will|can|could|does|do|did|has|have|who|what|when|where|which|why|how)\b",q):
+        queries.append(f"{q} official government India")
+    if len(q)>180:queries.append(q[:180])
+    return list(dict.fromkeys(queries))[:4]
 
 async def search_web(query:str,max_results:int|None=None,resource_plan:dict|None=None)->list[dict]:
     max_results=max_results or get_settings().max_search_results
@@ -125,9 +140,6 @@ async def search_web(query:str,max_results:int|None=None,resource_plan:dict|None
     if resource_plan:
         queries=list(dict.fromkeys(queries+_plan_queries(query,resource_plan)))[:4]
 
-    # Google News RSS is a free direct retrieval path and does not depend on
-    # DDGS/search-engine backends. Run it independently so DDGS failures cannot
-    # make the entire evidence search unavailable.
     news_batches=await asyncio.gather(
         *[_google_news(q,max_results) for q in queries],
         return_exceptions=True,
@@ -137,11 +149,6 @@ async def search_web(query:str,max_results:int|None=None,resource_plan:dict|None
         if isinstance(batch,list):
             news_results.extend(batch)
 
-    # DDGS is opportunistic only. Render/network failures are expected and must
-    # never erase successful Google News evidence.
-    # DDGS/search-engine backends are opportunistic and can be slow on
-    # hosted networks. Probe only the first two queries instead of multiplying
-    # provider failures across every planner-generated query.
     ddgs_batches=await asyncio.gather(
         *[_ddgs(q,min(max_results,6)) for q in queries[:2]],
         return_exceptions=True,
@@ -159,8 +166,6 @@ async def search_web(query:str,max_results:int|None=None,resource_plan:dict|None
         _relevance(query,item)
 
     relevant=[x for x in results if x.get("relevant")]
-    # Keep real retrieved results even when strict lexical relevance is weak.
-    # The synthesis model must decide whether they actually answer the question.
     pool=relevant or sorted(
         results,
         key=lambda x:(x["source_quality"],x.get("relevance_score",0),len(x["content"])),
@@ -179,8 +184,6 @@ async def search_web(query:str,max_results:int|None=None,resource_plan:dict|None
         if item["url"] in seen_urls:
             continue
         domain=item["publisher"]
-        # Prefer multiple independent publishers; allow additional official
-        # sources when they are high quality.
         if domain in seen_domains and item["source_quality"] < 90:
             continue
         out.append(item)
