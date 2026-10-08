@@ -1,6 +1,7 @@
 import json
 import asyncio
 import re
+import math
 from datetime import datetime,timezone
 from pydantic import ValidationError
 from ..models.factcheck import FactCheckResult,ArticleFactCheck,MediaAttachment
@@ -272,7 +273,7 @@ FINAL STAGE: Synthesize the research into the best-supported answer to the user'
             number=float(value)
         except (TypeError,ValueError):
             return default
-        if not (number == number):  # NaN
+        if not math.isfinite(number):
             return default
         if 0 <= number <= 1:
             number *= 100
@@ -321,7 +322,7 @@ Retrieved evidence:
     def _confidence_int(value, default=0):
         try:number=float(value)
         except (TypeError,ValueError):return default
-        if not (number == number):return default
+        if not math.isfinite(number):return default
         if 0 <= number <= 1:number *= 100
         return max(0,min(100,int(round(number))))
     if "overall_confidence" in data:
