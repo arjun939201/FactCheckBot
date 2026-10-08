@@ -226,7 +226,7 @@ RESEARCH QUESTIONS: {json.dumps(questions, ensure_ascii=False)}
 PREFERENCES: {json.dumps(prefs)}
 Choose resource types that can actually answer these questions: government/official, courts/law, election authority, legislation/regulations, academic/research, datasets/statistics, company/technical docs, standards/specifications, security advisories, medical/health authorities, financial/regulatory, reputable news, fact-checking, local/primary records, user-provided documents, general web.
 Preferred domains must be real and relevant; leave empty when uncertain. Search strategy contains short query tactics, not URLs.
-Rules: do not assume the topic is political; adapt to the input. Prefer primary sources, then high-quality secondary sources. Do not invent a source merely to fill a category.
+Rules: infer the subject, geography, timeframe, and evidence needs only from the user's input and research questions. Select source types and domains dynamically for this specific task. Do not inject assumed topics, countries, institutions, parties, people, or events. Prefer the most authoritative sources appropriate to the subject, then corroborate with high-quality independent sources. Do not invent a source merely to fill a category.
 Return ONLY JSON:
 {{"context":"string","resource_types":["string"],"preferred_domains":["example.org"],"search_strategy":["string"],"rationale":"string"}}"""
     data = await groq_json(prompt)
