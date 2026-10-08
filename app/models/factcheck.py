@@ -31,6 +31,12 @@ class MediaAttachment(BaseModel):
     filename:str; media_type:str; kind:str; size_bytes:int; extracted_text:str=""; visual_summary:str=""
 class ResearchData(BaseModel):
     question:str; answer:str; evidence_ids:list[str]=Field(default_factory=list)
+class ResourcePlan(BaseModel):
+    context:str="general"
+    resource_types:list[str]=Field(default_factory=list)
+    preferred_domains:list[str]=Field(default_factory=list)
+    search_strategy:list[str]=Field(default_factory=list)
+    rationale:str=""
 
 class FactCheckResult(BaseModel):
     claim:str; verdict:Verdict; confidence:int=Field(ge=0,le=100); summary:str; reasoning:str
@@ -41,6 +47,7 @@ class FactCheckResult(BaseModel):
     claims_checked:list[ClaimAssessment]=Field(default_factory=list)
     research_questions:list[str]=Field(default_factory=list)
     research_data:list[ResearchData]=Field(default_factory=list)
+    resource_plan:ResourcePlan=Field(default_factory=ResourcePlan)
 class ArticleClaim(BaseModel):
     claim:str; verdict:Verdict; confidence:int=Field(ge=0,le=100); summary:str
 class ArticleFactCheck(BaseModel):
