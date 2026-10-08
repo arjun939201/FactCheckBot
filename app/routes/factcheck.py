@@ -4,6 +4,7 @@ from ..models.factcheck import FactCheckRequest,URLFactCheckRequest
 from ..services.fact_checker import run_fact_check,run_url_fact_check
 from ..services.media import extract_media,MediaCapabilityError,MediaRateLimitError,MediaCallBudget
 from ..services.groq import GroqPayloadTooLargeError,GroqProviderError
+from ..services.search import SearchError
 from ..config import get_settings
 from .history import owner, store
 
@@ -73,9 +74,12 @@ async def media_fact_check(
         raise HTTPException(413,str(e)) from e
     except GroqProviderError as e:
         raise HTTPException(503,str(e)) from e
+    except SearchError as e:
+        logger.exception("Live evidence retrieval failed",extra={"file_count":len(files),"input_length":len(text)})
+        raise HTTPException(502,"Live web evidence could not be retrieved right now. Please try again.") from e
     except Exception as e:
         logger.exception("Media fact-check failed",extra={"file_count":len(files),"input_length":len(text)})
-        raise HTTPException(502,"We couldn't analyze the attachment(s) right now. Please try again.") from e
+        raise HTTPException(502,"We couldn't complete this investigation right now. Please try again.") from e
     i=await _save(r,"claim",r.claim[:120],owner(request,response));return {"id":i,**r.model_dump(mode="json")} 
 
 @router.post("/fact-check/url")
