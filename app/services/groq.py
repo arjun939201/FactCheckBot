@@ -246,7 +246,10 @@ Rules:
 - For comparisons or causal questions, research the minimum facts needed to make the comparison or assess the cause.
 - Use direct factual wording. Do not assume the answer or frame questions to support a preferred conclusion.
 - Do not invent allegations, people, dates, locations, motives, or subclaims not present or logically necessary.
-- Simple questions may need only one question. Context-dependent questions should normally have 2-5 targeted questions, not generic filler.
+- Simple, stable questions may need only one question. If the answer depends on current status, a role/office, a governing or controlling entity, an election/appointment, or a timeline, return 3-5 targeted questions.
+- For current-status questions, cover (when relevant): who/what holds the role or status now; the responsible party, coalition, organization, or authority; the most recent election/appointment/decision and its outcome; when the current term or status began; and the duration/status as of the requested date.
+- Make each question independently searchable and include the key entity, place, and timeframe in its wording when known. Avoid vague questions such as "what happened?" or "what is the context?"
+- Do not assume the answer. Questions must be neutral and able to establish a contrary answer.
 - Order questions by importance; the first should establish the central fact needed to answer the user.
 Return ONLY JSON: {{"questions":["string"]}}"""
     data = await groq_json(prompt)
