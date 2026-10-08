@@ -74,7 +74,17 @@ function researchCards(d){
     }).join('')}
   </section>`;
 }
-function renderResult(d){let uncertainty=d.uncertainties?.length?`<div class="warning"><b>Uncertainty & limits</b><ul>${d.uncertainties.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`:'';$('#result').innerHTML=reportShell(d)+`<div class="result-grid"><div><section class="result-section"><h3>Bottom line</h3><p class="summary">${esc(d.summary)}</p></section>${resourcePlanCard(d)}${researchCards(d)}<section class="result-section"><h3>Claims</h3>${claims(d.claims_checked)}</section><section class="result-section"><h3>Supports</h3>${evidenceCards(d.supporting_evidence)}</section><section class="result-section"><h3>Contradicts</h3>${evidenceCards(d.contradicting_evidence,true)}</section></div><aside><section class="result-section"><h3>Why</h3><p>${esc(d.reasoning)}</p></section><section class="result-section"><h3>Sources</h3>${sourceCards(d.sources)}</section>${d.context?`<section class="result-section"><h3>Context</h3><p>${esc(d.context)}</p></section>`:''}${d.attachments?.length?`<section class="result-section"><h3>Media</h3>${mediaCards(d.attachments)}</section>`:''}</aside></div>${uncertainty}</div>`}
+function renderResult(d){
+  const verdict=d.verdict||'UNVERIFIED';
+  const uncertainty=d.uncertainties?.length
+    ? '<div class="warning"><b>Uncertainty:</b> '+esc(d.uncertainties[0])+'</div>' : '';
+  $('#result').innerHTML=reportShell(d)+
+    '<div class="result-grid"><div>'+
+      '<section class="result-section final-answer"><h3>Answer</h3><p class="summary">'+esc(d.summary||d.reasoning||'No grounded answer was available.')+'</p></section>'+
+      '<section class="result-section"><h3>Sources</h3>'+sourceCards(d.sources)+'</section>'+
+      uncertainty+
+    '</div></div></div>';
+}
 function renderArticle(d){$('#result').innerHTML=reportShell(d,true)+`<div class="result-grid"><div><section class="result-section"><h3>Bottom line</h3><p class="summary">${esc(d.summary)}</p></section><section class="result-section"><h3>Claims</h3>${claims((d.claims_checked||[]).map(c=>({...c,content_type:'ARTICLE CLAIM',source_quality:0,corroboration_count:0})) )}</section></div><aside><section class="result-section"><h3>Sources</h3>${sourceCards(d.sources)}</section>${d.uncertainties?.length?`<div class="warning"><b>Uncertainty</b><ul>${d.uncertainties.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`:''}</aside></div></div>`}
 window.shareResult=async id=>{const u=location.origin+'/share/'+id;try{await navigator.clipboard.writeText(u);$('#status').textContent='Share link copied.';setTimeout(()=>$('#status').textContent='',1800)}catch{prompt('Copy share link',u)}};
 
