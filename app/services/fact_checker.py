@@ -50,7 +50,13 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
     simple_question = explicit_question and len(primary_text) <= 300 and not media_only
     if simple_question:
         claims=[{"claim":primary_text,"content_type":"QUESTION"}]
-        research_questions=[primary_text]
+        # Even short questions may need contextual subquestions (current status,
+        # responsible entity, dates, or duration). Keep the original question too;
+        # the targeted subquestions improve retrieval without changing user intent.
+        from .groq import breakdown_questions
+        research_questions=await breakdown_questions(primary_text,prefs)
+        if not research_questions:
+            research_questions=[primary_text]
     else:
         claims=await decompose_claims(primary_for_model,prefs,media_only=media_only)
         if explicit_question and claims:
