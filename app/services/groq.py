@@ -182,6 +182,19 @@ Return exactly one JSON object using this schema:
 {json.dumps(SCHEMA)}"""
 
     
+async def plan_resources(text: str, questions: list[str], prefs: dict) -> dict:
+    prompt = f"""Create a context-aware evidence resource plan for this investigation.
+USER INPUT: {text[:get_settings().groq_claim_input_chars]!r}
+RESEARCH QUESTIONS: {json.dumps(questions, ensure_ascii=False)}
+PREFERENCES: {json.dumps(prefs)}
+Choose resource types that can actually answer these questions: government/official, courts/law, election authority, legislation/regulations, academic/research, datasets/statistics, company/technical docs, standards/specifications, security advisories, medical/health authorities, financial/regulatory, reputable news, fact-checking, local/primary records, user-provided documents, general web.
+Preferred domains must be real and relevant; leave empty when uncertain. Search strategy contains short query tactics, not URLs.
+Rules: do not assume the topic is political; adapt to the input. Prefer primary sources, then high-quality secondary sources. Do not invent a source merely to fill a category.
+Return ONLY JSON:
+{{"context":"string","resource_types":["string"],"preferred_domains":["example.org"],"search_strategy":["string"],"rationale":"string"}}"""
+    data = await groq_json(prompt)
+    return data if isinstance(data, dict) else {}
+
 async def breakdown_questions(text: str, prefs: dict) -> list[str]:
     prompt = f"""Break the user's input into the smallest set of answerable research questions needed to investigate it.
 USER INPUT: {text[:get_settings().groq_claim_input_chars]!r}
