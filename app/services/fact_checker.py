@@ -51,7 +51,11 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
         research_questions = [f"What evidence directly answers or verifies this input: {primary_text[:500]}?"]
 
     # Select evidence resources for this context before searching.
-    resource_plan = await plan_resources(primary_text, research_questions, prefs)
+    try:
+        resource_plan = await plan_resources(primary_text, research_questions, prefs)
+    except Exception:
+        # Resource planning must improve retrieval, never make the investigation unavailable.
+        resource_plan = {}
     resource_plan.setdefault("context", "general")
     resource_plan.setdefault("resource_types", [])
     resource_plan.setdefault("preferred_domains", [])
