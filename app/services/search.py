@@ -26,7 +26,8 @@ def _normalise(results):
             continue
         u=x.get("href") or x.get("url") or ""
         if urlparse(u).scheme not in {"http","https"} or u in seen:continue
-        seen.add(u);title=str(x.get("title",""))[:300];publisher=urlparse(u).netloc
+        seen.add(u);title=str(x.get("title",""))[:300]
+        publisher=str(x.get("publisher") or urlparse(u).netloc)
         st=source_type_for(title,publisher,u);quality,tier=_quality(st,publisher,u)
         out.append({"title":title,"url":u,"content":str(x.get("body") or x.get("description") or "")[:5000],"publisher":publisher,"source_type":st,"source_quality":quality,"source_tier":tier})
     return out
@@ -56,7 +57,8 @@ async def _google_news(query,max_results):
     except Exception as e:logger.warning("Google News RSS failed: error=%s",type(e).__name__);return []
     results=[]
     for item in root.findall(".//item")[:max_results]:
-        results.append({"title":item.findtext("title") or "","url":item.findtext("link") or "","body":re.sub("<[^>]+>"," ",item.findtext("description") or "").strip()})
+        source=item.findtext("source") or ""
+        results.append({"title":item.findtext("title") or "","url":item.findtext("link") or "","publisher":source.strip(),"body":re.sub("<[^>]+>"," ",item.findtext("description") or "").strip()})
     return _normalise(results)
 
 _STOPWORDS={
@@ -120,8 +122,6 @@ def _queries(query):
     parts=[p.strip() for p in re.split(r"(?<=[.!?])\s+",q) if p.strip()]
     queries=[q]+parts[:1]
     low=q.lower()
-    # Questions about who forms India's central/Union government need evidence
-    # about the Union executive, not merely pages mentioning the party.
     if "central government" in low or "union government" in low:
         queries.extend([
             f"{q} Union Government India Prime Minister Council of Ministers",
