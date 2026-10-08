@@ -22,8 +22,7 @@ def _quality(source_type,publisher,url):
 def _normalise(results):
     out=[];seen=set()
     for x in results:
-        if not isinstance(x,dict):
-            continue
+        if not isinstance(x,dict):continue
         u=x.get("href") or x.get("url") or ""
         if urlparse(u).scheme not in {"http","https"} or u in seen:continue
         seen.add(u);title=str(x.get("title",""))[:300]
@@ -79,7 +78,7 @@ def _relevance(query,item):
     if not qt:return 0
     overlap=qt & ht
     coverage=len(overlap)/len(qt)
-    title_overlap=len(qt & _terms(str(item.get('title',''))))
+    title_overlap=len(qt & _terms(str(item.get("title",""))))
     exact=1 if q in hay and len(q)>12 else 0
     score=min(100, round(coverage*65 + min(title_overlap,3)*8 + exact*25))
     required=1 if len(qt)<=2 else 2
@@ -88,6 +87,8 @@ def _relevance(query,item):
     item["relevant"]=bool(exact or len(overlap)>=required)
     return score
 
+# This is a resource catalogue, not a topic-specific search script. The planner
+# selects relevant categories for each request; unrelated categories are not forced.
 _RESOURCE_DOMAINS = {
     "government/official":["gov.in","india.gov.in","pib.gov.in","pmo.gov.in","presidentofindia.gov.in","sansad.in","loksabha.nic.in","rajyasabha.nic.in"],
     "election authority":["eci.gov.in"],
@@ -111,27 +112,20 @@ def _plan_queries(query, plan):
     domains=[]
     for d in plan.get("preferred_domains",[])[:8]:
         d=str(d).strip().lower().replace("https://","").replace("http://","").split("/")[0]
-        if d in _KNOWN_PLANNER_DOMAINS: domains.append(d)
+        if d in _KNOWN_PLANNER_DOMAINS:domains.append(d)
     for rtype in plan.get("resource_types",[])[:8]:
         domains.extend(_RESOURCE_DOMAINS.get(str(rtype).lower(),[]))
     domain_queries=[f"{query} site:{d}" for d in dict.fromkeys(domains)][:4]
     return list(dict.fromkeys(terms+domain_queries))
 
 def _queries(query):
+    # No hard-coded political, country, institution, or topic assumptions.
+    # Query expansion comes from the context-aware resource planner below.
     q=" ".join(query.split())
     parts=[p.strip() for p in re.split(r"(?<=[.!?])\s+",q) if p.strip()]
     queries=[q]+parts[:1]
-    low=q.lower()
-    if "central government" in low or "union government" in low:
-        queries.extend([
-            f"{q} Union Government India Prime Minister Council of Ministers",
-            f"{q} India government formation Lok Sabha majority",
-            f"{q} BJP NDA Union Government India 2026",
-        ])
-    elif re.match(r"(?i)^(is|are|was|were|will|can|could|does|do|did|has|have|who|what|when|where|which|why|how)\b",q):
-        queries.append(f"{q} official government India")
     if len(q)>180:queries.append(q[:180])
-    return list(dict.fromkeys(queries))[:4]
+    return list(dict.fromkeys(queries))[:3]
 
 async def search_web(query:str,max_results:int|None=None,resource_plan:dict|None=None)->list[dict]:
     max_results=max_results or get_settings().max_search_results
@@ -140,60 +134,31 @@ async def search_web(query:str,max_results:int|None=None,resource_plan:dict|None
     if resource_plan:
         queries=list(dict.fromkeys(queries+_plan_queries(query,resource_plan)))[:4]
 
-    news_batches=await asyncio.gather(
-        *[_google_news(q,max_results) for q in queries],
-        return_exceptions=True,
-    )
+    news_batches=await asyncio.gather(*[_google_news(q,max_results) for q in queries],return_exceptions=True)
     news_results=[]
     for batch in news_batches:
-        if isinstance(batch,list):
-            news_results.extend(batch)
+        if isinstance(batch,list):news_results.extend(batch)
 
-    ddgs_batches=await asyncio.gather(
-        *[_ddgs(q,min(max_results,6)) for q in queries[:2]],
-        return_exceptions=True,
-    )
+    ddgs_batches=await asyncio.gather(*[_ddgs(q,min(max_results,6)) for q in queries[:2]],return_exceptions=True)
     ddgs_results=[]
     for batch in ddgs_batches:
-        if isinstance(batch,list):
-            ddgs_results.extend(batch)
+        if isinstance(batch,list):ddgs_results.extend(batch)
 
     results=_normalise(news_results+ddgs_results)
-    if not results:
-        raise SearchError("No live web evidence was retrieved from available search providers")
-
-    for item in results:
-        _relevance(query,item)
+    if not results:raise SearchError("No live web evidence was retrieved from available search providers")
+    for item in results:_relevance(query,item)
 
     relevant=[x for x in results if x.get("relevant")]
-    pool=relevant or sorted(
-        results,
-        key=lambda x:(x["source_quality"],x.get("relevance_score",0),len(x["content"])),
-        reverse=True,
-    )[:max(4,min(max_results,8))]
-
-    ranked=sorted(
-        pool,
-        key=lambda x:(x.get("relevance_score",0),x["source_quality"],len(x["content"])),
-        reverse=True,
-    )
-    seen_urls=set()
-    seen_domains=set()
-    out=[]
+    pool=relevant or sorted(results,key=lambda x:(x["source_quality"],x.get("relevance_score",0),len(x["content"])),reverse=True)[:max(4,min(max_results,8))]
+    ranked=sorted(pool,key=lambda x:(x.get("relevance_score",0),x["source_quality"],len(x["content"])),reverse=True)
+    seen_urls=set();seen_domains=set();out=[]
     for item in ranked:
-        if item["url"] in seen_urls:
-            continue
+        if item["url"] in seen_urls:continue
         domain=item["publisher"]
-        if domain in seen_domains and item["source_quality"] < 90:
-            continue
-        out.append(item)
-        seen_urls.add(item["url"])
-        seen_domains.add(domain)
-        if len(out)>=max_results:
-            break
-
+        if domain in seen_domains and item["source_quality"]<90:continue
+        out.append(item);seen_urls.add(item["url"]);seen_domains.add(domain)
+        if len(out)>=max_results:break
     counts=Counter(x["publisher"] for x in out)
     for i,x in enumerate(out,1):
-        x["evidence_id"]=f"E{i:02d}"
-        x["corroboration_count"]=counts[x["publisher"]]
+        x["evidence_id"]=f"E{i:02d}";x["corroboration_count"]=counts[x["publisher"]]
     return out
