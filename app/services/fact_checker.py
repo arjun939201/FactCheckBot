@@ -104,12 +104,39 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
             raise result
         else:
             question_batches.append(result)
-    evidence=[];seen=set()
-    for batch in question_batches:
+    # Merge evidence across ALL research questions before applying the model
+    # context limit. Query-order concatenation let the broad first search crowd
+    # out stronger results discovered by targeted subquestions.
+    evidence_by_url={}
+    for question,batch in zip(search_queries,question_batches):
         for item in batch:
-            if item["url"] not in seen:
-                seen.add(item["url"])
-                evidence.append(item)
+            url=item.get("url")
+            if not url:
+                continue
+            candidate=dict(item)
+            candidate["matched_questions"]=[question]
+            existing=evidence_by_url.get(url)
+            if existing is None:
+                evidence_by_url[url]=candidate
+                continue
+            matched=list(dict.fromkeys(existing.get("matched_questions",[])+[question]))
+            if (candidate.get("relevance_score",0),candidate.get("source_quality",0)) > (
+                existing.get("relevance_score",0),existing.get("source_quality",0)
+            ):
+                evidence_by_url[url]=candidate
+            evidence_by_url[url]["matched_questions"]=matched
+            evidence_by_url[url]["relevant"]=bool(
+                evidence_by_url[url].get("relevant") or candidate.get("relevant")
+            )
+    evidence=sorted(
+        evidence_by_url.values(),
+        key=lambda x:(
+            x.get("relevance_score",0),
+            x.get("source_quality",0),
+            len(str(x.get("content",""))),
+        ),
+        reverse=True,
+    )
     if not evidence:
         if relevance_gap:
             raise RuntimeError("Search returned pages, but none were sufficiently relevant to answer this input. Try a more specific query or add the key entity, location, or timeframe.")
