@@ -10,6 +10,7 @@ from ..config import get_settings
 
 logger=logging.getLogger(__name__)
 class SearchError(Exception):pass
+class SearchRelevanceError(SearchError):pass
 
 def _quality(source_type,publisher,url):
     # Trust tier follows validated source classification, not publisher/headline text.
@@ -156,7 +157,7 @@ async def search_web(query:str,max_results:int|None=None,resource_plan:dict|None
     # if all batches are empty, the caller can report a relevance gap honestly.
     if not relevant:
         logger.info("Search returned pages but none passed relevance checks")
-        return []
+        raise SearchRelevanceError("Pages were retrieved, but none passed relevance checks")
     ranked=sorted(relevant,key=lambda x:(x.get("relevance_score",0),x["source_quality"],len(x["content"])),reverse=True)
     seen_urls=set();seen_domains=set();out=[]
     for item in ranked:
