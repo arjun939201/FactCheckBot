@@ -42,10 +42,27 @@ async def media_fact_check(
     if len(files)>5: raise HTTPException(400,"You can attach up to 5 files per fact check.")
     try:
         budget=MediaCallBudget(get_settings().media_vision_calls_per_request)
-        contexts=[await extract_media(file,budget) for file in files]
+        contexts=[]
+        media_errors=[]
+        # Attachments are optional context: one unavailable attachment must not
+        # prevent the user's primary text from being researched.
+        for file in files:
+            try:
+                contexts.append(await extract_media(file,budget))
+            except MediaRateLimitError as e:
+                media_errors.append(f"{file.filename or 'Attachment'}: {e}")
+                logger.warning("Optional media analysis rate-limited: filename=%s",file.filename)
+            except MediaCapabilityError as e:
+                media_errors.append(f"{file.filename or 'Attachment'}: {e}")
+                logger.warning("Optional media analysis unavailable: filename=%s",file.filename)
+            except ValueError as e:
+                media_errors.append(f"{file.filename or 'Attachment'}: {e}")
+                logger.warning("Optional media rejected: filename=%s",file.filename)
         seed=text.strip() or "Analyze the attached media and identify the claims that require verification."
         validated=FactCheckRequest(text=seed,content_mode=content_mode,detail=detail,audience=audience,source_preference=source_preference,region=region,language=language)
         r=await run_fact_check(validated.text,prefs(validated),contexts,media_only=not text.strip())
+        if media_errors:
+            r.uncertainties.extend(media_errors)
     except ValueError as e: raise HTTPException(400,str(e)) from e
     except MediaRateLimitError as e:
         headers={"Retry-After":str(max(1,int(e.retry_after or 5)))}
