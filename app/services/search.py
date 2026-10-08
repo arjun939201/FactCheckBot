@@ -124,23 +124,70 @@ async def search_web(query:str,max_results:int|None=None,resource_plan:dict|None
     queries=_queries(query)
     if resource_plan:
         queries=list(dict.fromkeys(queries+_plan_queries(query,resource_plan)))[:10]
-    batches=await asyncio.gather(*[_ddgs(q,max_results) for q in queries],*[_google_news(q,max_results) for q in queries])
-    results=_normalise([item for batch in batches for item in batch])
-    if not results:raise SearchError("No live web evidence was retrieved")
-    for item in results:_relevance(query,item)
+
+    # Google News RSS is a free direct retrieval path and does not depend on
+    # DDGS/search-engine backends. Run it independently so DDGS failures cannot
+    # make the entire evidence search unavailable.
+    news_batches=await asyncio.gather(
+        *[_google_news(q,max_results) for q in queries],
+        return_exceptions=True,
+    )
+    news_results=[]
+    for batch in news_batches:
+        if isinstance(batch,list):
+            news_results.extend(batch)
+
+    # DDGS is opportunistic only. Render/network failures are expected and must
+    # never erase successful Google News evidence.
+    ddgs_batches=await asyncio.gather(
+        *[_ddgs(q,max_results) for q in queries],
+        return_exceptions=True,
+    )
+    ddgs_results=[]
+    for batch in ddgs_batches:
+        if isinstance(batch,list):
+            ddgs_results.extend(batch)
+
+    results=_normalise(news_results+ddgs_results)
+    if not results:
+        raise SearchError("No live web evidence was retrieved from available search providers")
+
+    for item in results:
+        _relevance(query,item)
+
     relevant=[x for x in results if x.get("relevant")]
-    # If the web returned only weak matches, retain a tiny fallback set rather
-    # than pretending there is no web evidence at all. Weak sources are clearly marked.
-    pool=relevant or sorted(results,key=lambda x:(x["source_quality"],x.get("relevance_score",0)),reverse=True)[:2]
-    ranked=sorted(pool,key=lambda x:(x.get("relevance_score",0),x["source_quality"],len(x["content"])),reverse=True)
-    seen_domains=set();out=[]
+    # Keep real retrieved results even when strict lexical relevance is weak.
+    # The synthesis model must decide whether they actually answer the question.
+    pool=relevant or sorted(
+        results,
+        key=lambda x:(x["source_quality"],x.get("relevance_score",0),len(x["content"])),
+        reverse=True,
+    )[:max(4,min(max_results,8))]
+
+    ranked=sorted(
+        pool,
+        key=lambda x:(x.get("relevance_score",0),x["source_quality"],len(x["content"])),
+        reverse=True,
+    )
+    seen_urls=set()
+    seen_domains=set()
+    out=[]
     for item in ranked:
+        if item["url"] in seen_urls:
+            continue
         domain=item["publisher"]
-        if domain not in seen_domains:
-            out.append(item);seen_domains.add(domain)
+        # Prefer multiple independent publishers; allow additional official
+        # sources when they are high quality.
+        if domain in seen_domains and item["source_quality"] < 90:
+            continue
+        out.append(item)
+        seen_urls.add(item["url"])
+        seen_domains.add(domain)
         if len(out)>=max_results:
             break
+
     counts=Counter(x["publisher"] for x in out)
     for i,x in enumerate(out,1):
-        x["evidence_id"]=f"E{i:02d}";x["corroboration_count"]=counts[x["publisher"]]
+        x["evidence_id"]=f"E{i:02d}"
+        x["corroboration_count"]=counts[x["publisher"]]
     return out
