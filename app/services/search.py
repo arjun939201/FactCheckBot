@@ -12,11 +12,13 @@ logger=logging.getLogger(__name__)
 class SearchError(Exception):pass
 
 def _quality(source_type,publisher,url):
-    s=f"{source_type} {publisher} {url}".lower()
-    if "government" in source_type.lower() or ".gov" in s:return (95,"Primary/official")
-    if "academic" in source_type.lower() or any(x in s for x in ["who.int","un.org","imf.org","worldbank.org","nature.com","science.org","pubmed","arxiv.org"]):return (92,"Academic/official")
-    if "fact-check" in source_type.lower() or "factcheck" in s:return (88,"Fact-checking")
-    if "major news" in source_type.lower() or any(x in s for x in ["reuters","apnews","bbc","theguardian","nytimes","washingtonpost"]):return (82,"Major news")
+    # Trust tier follows validated source classification, not publisher/headline text.
+    # Search aggregators and misleading titles must never upgrade a source's authority.
+    kind=str(source_type or "").lower()
+    if kind=="government":return (95,"Primary/official")
+    if kind in {"academic/scientific","academic"}:return (92,"Academic/official")
+    if "fact-check" in kind:return (88,"Fact-checking")
+    if "major news" in kind:return (82,"Major news")
     return (60,"Other")
 
 def _normalise(results):
@@ -149,8 +151,13 @@ async def search_web(query:str,max_results:int|None=None,resource_plan:dict|None
     for item in results:_relevance(query,item)
 
     relevant=[x for x in results if x.get("relevant")]
-    pool=relevant or sorted(results,key=lambda x:(x["source_quality"],x.get("relevance_score",0),len(x["content"])),reverse=True)[:max(4,min(max_results,8))]
-    ranked=sorted(pool,key=lambda x:(x.get("relevance_score",0),x["source_quality"],len(x["content"])),reverse=True)
+    # Never pass unrelated search results to the synthesis model just to fill a
+    # source list. An empty batch allows other research questions to contribute;
+    # if all batches are empty, the caller can report a relevance gap honestly.
+    if not relevant:
+        logger.info("Search returned pages but none passed relevance checks")
+        return []
+    ranked=sorted(relevant,key=lambda x:(x.get("relevance_score",0),x["source_quality"],len(x["content"])),reverse=True)
     seen_urls=set();seen_domains=set();out=[]
     for item in ranked:
         if item["url"] in seen_urls:continue
