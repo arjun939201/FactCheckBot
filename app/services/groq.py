@@ -102,6 +102,8 @@ async def groq_json(instruction):
             candidates.append(model)
     last_error=None
     for model in candidates:
+        # Retired/stale model names can remain in Render environment variables.
+        # A 404 must be treated as configuration fallback, not as a request failure.
         try:
             content=await _request(model,instruction)
             return _parse_json(content)
@@ -109,7 +111,7 @@ async def groq_json(instruction):
             last_error=e
             if e.response.status_code!=404:
                 raise
-            logger.warning("Configured Groq model unavailable: %s",model)
+            logger.warning("Configured Groq model unavailable; skipping: %s",model)
     try:
         available=await _available_models()
     except httpx.HTTPError as e:
