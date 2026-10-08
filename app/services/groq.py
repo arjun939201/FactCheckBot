@@ -233,19 +233,34 @@ Return ONLY JSON:
     return data if isinstance(data, dict) else {}
 
 async def breakdown_questions(text: str, prefs: dict) -> list[str]:
-    prompt = f"""Break the user's input into the smallest set of answerable research questions needed to investigate it.
+    prompt = f"""Build a concise, context-aware research plan for answering the user's input accurately.
 USER INPUT: {text[:get_settings().groq_claim_input_chars]!r}
 PREFERENCES: {json.dumps(prefs)}
+Return the smallest useful set of specific, independently searchable questions whose answers together resolve the original input.
 Rules:
-- The user's input is compulsory and is the only investigation subject.
-- Questions must directly help answer the input.
-- Prefer concrete, independently researchable questions.
+- Preserve the exact subject and intent. Every question must help answer the input; do not drift into a general topic report.
+- Infer relevant entities, relationships, geography, and timeframe from the input. Do not assume a country, institution, party, person, or topic that the input does not establish.
+- For time-sensitive questions, verify the status as of the requested date/year; ask who currently holds the role or authority when relevant.
+- For questions about leadership, government, organizations, offices, or control, distinguish the entity from the office/institution and identify the current holder or governing coalition when needed.
+- When needed to establish a timeline, ask when the relevant election/appointment/decision occurred, who won or took office, the term's start/end or current status, and how long it has lasted. Calculate duration only from verified dates.
+- For comparisons or causal questions, research the minimum facts needed to make the comparison or assess the cause.
+- Use direct factual wording. Do not assume the answer or frame questions to support a preferred conclusion.
 - Do not invent allegations, people, dates, locations, motives, or subclaims not present or logically necessary.
-- For a simple factual claim, return 1-3 questions. For a complex claim, return up to 5.
+- Simple questions may need only one question. Context-dependent questions should normally have 2-5 targeted questions, not generic filler.
+- Order questions by importance; the first should establish the central fact needed to answer the user.
 Return ONLY JSON: {{"questions":["string"]}}"""
     data = await groq_json(prompt)
     if not isinstance(data, dict): return []
-    return [str(x).strip() for x in data.get("questions",[]) if str(x).strip()][:5]
+    seen=set()
+    questions=[]
+    for item in data.get("questions",[]):
+        question=str(item).strip()
+        key=" ".join(question.lower().split())
+        if question and key not in seen:
+            seen.add(key)
+            questions.append(question)
+        if len(questions)>=5:break
+    return questions
 
 
 def research_instruction(input_text: str, questions: list[str], research_packets: list[dict]) -> str:
