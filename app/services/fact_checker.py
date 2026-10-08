@@ -44,11 +44,44 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
         claims=[{"claim":primary_text,"content_type":prefs.get("content_mode","auto")}]
     claims=claims[:4]
 
+    # Required workflow: input -> question breakdown -> web search -> raw research data -> synthesis/verdict.
+    from .groq import breakdown_questions, research_instruction
+    research_questions = await breakdown_questions(primary_text, prefs)
+    if not research_questions:
+        research_questions = [f"What evidence directly answers or verifies this input: {primary_text[:500]}?"]
+
+    question_batches = await asyncio.gather(*[search_web(q) for q in research_questions])
+    research_packets=[]
+    for question,batch in zip(research_questions,question_batches):
+        packet=[]
+        for item in batch[:8]:
+            packet.append({
+                "evidence_id": item.get("evidence_id",""),
+                "title": item.get("title",""),
+                "publisher": item.get("publisher",""),
+                "url": item.get("url",""),
+                "content": str(item.get("content",""))[:get_settings().groq_evidence_excerpt_chars],
+                "source_quality": item.get("source_quality",0),
+                "source_tier": item.get("source_tier","Other"),
+                "relevance_score": item.get("relevance_score",0)
+            })
+        research_packets.append({"question":question,"web_results":packet})
+
+    raw_research = await groq_json(research_instruction(primary_text,research_questions,research_packets))
+    raw_items = raw_research.get("research_data",[]) if isinstance(raw_research,dict) else []
+    if not isinstance(raw_items,list): raw_items=[]
+    raw_items=[x for x in raw_items if isinstance(x,dict)][:5]
+
     # Search only the primary claims. Never search OCR/visual questions as separate claims
     # when the user already supplied a textual investigation subject.
-    batches=await asyncio.gather(*[search_web(c["claim"]) for c in claims])
+    # Retain direct claim searches for precise verdict mapping.
+    claim_batches=await asyncio.gather(*[search_web(c["claim"]) for c in claims])
     evidence=[];seen=set()
-    for batch in batches:
+    for packet in research_packets:
+        for item in packet["web_results"]:
+            if item["url"] not in seen:
+                seen.add(item["url"]);evidence.append(item)
+    for batch in claim_batches:
         for item in batch:
             if item["url"] not in seen:
                 seen.add(item["url"]);evidence.append(item)
@@ -70,10 +103,15 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
         })
 
     media_context="\n\n".join(media_blocks)[:MAX_MEDIA_CONTEXT]
-    data=await groq_json(factcheck_instruction(
+    synthesis_input = factcheck_instruction(
         primary_for_model,evidence_for_model,prefs,claims,
         media_context=media_context,media_only=media_only
-    ))
+    ) + f"""\nRESEARCH QUESTIONS:
+{json.dumps(research_questions,ensure_ascii=False)}
+RAW RESEARCH DATA:
+{json.dumps(raw_items,ensure_ascii=False)}
+FINAL STAGE: Synthesize the research into the best-supported answer to the user's original input, then assign the verdict. Do not use unsupported model knowledge."""
+    data=await groq_json(synthesis_input)
     if not isinstance(data,dict):
         raise RuntimeError("The AI returned an invalid fact-check object")
 
@@ -144,6 +182,15 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
     data["claim"]=claims[0]["claim"] if claims else primary_text
     data["report_title"]="Fact Check Report" if not media_only else "Media Fact Check Report"
     data["attachments"]=[x.model_dump(mode="json") for x in attachments]
+    valid_ids={x["evidence_id"] for x in evidence}
+    cleaned_research=[]
+    for x in raw_items:
+        q=str(x.get("question","")).strip()
+        a=str(x.get("answer","")).strip()
+        ids=[i for i in x.get("evidence_ids",[]) if i in valid_ids]
+        if q and a: cleaned_research.append({"question":q,"answer":a,"evidence_ids":ids})
+    data["research_questions"]=research_questions
+    data["research_data"]=cleaned_research
     if not data["sources"] and data.get("verdict") not in {"OPINION","PREDICTION"}:
         data["verdict"]="UNVERIFIED";data["confidence"]=min(int(data.get("confidence",0)),50)
         data.setdefault("uncertainties",[]).append("Retrieved sources did not support a grounded evidence mapping for the primary claim.")
