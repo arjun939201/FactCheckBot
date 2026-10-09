@@ -1,6 +1,8 @@
 from fastapi import APIRouter
+from fastapi.responses import JSONResponse
 from ..config import get_settings
 from ..services.groq import get_ai_status
+from .history import store
 
 router = APIRouter()
 
@@ -12,9 +14,17 @@ def health():
 @router.get("/health/readiness")
 def readiness():
     s=get_settings()
-    checks={"database":bool(s.database_url),"ai":bool(s.groq_api_key),"search":True}
+    try:
+        store.ping()
+        database_ok=True
+    except Exception:
+        database_ok=False
+    checks={"database":database_ok,"ai":bool(s.groq_api_key),"search":True}
     ready=all(checks.values())
-    return {"status":"ready" if ready else "degraded","checks":checks,"version":s.app_version}
+    return JSONResponse(
+        {"status":"ready" if ready else "degraded","checks":checks,"version":s.app_version},
+        status_code=200 if ready else 503,
+    )
 
 @router.get("/capabilities")
 def capabilities():
