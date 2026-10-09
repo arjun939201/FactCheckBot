@@ -16,7 +16,6 @@
     </a>
     <nav class="nav" aria-label="Primary">
       <button data-v="fact" class="nav-btn active">Research</button>
-      <button data-v="chat" class="nav-btn">Assistant</button>
       <button data-v="history" class="nav-btn">History</button>
       <button data-v="settings" class="nav-btn">Settings</button>
     </nav>
@@ -37,15 +36,12 @@
             <button id="claimTab" class="seg active" role="tab">Research input + optional media</button>
             <button id="urlTab" class="seg" role="tab">Article URL</button>
           </div>
-          <label class="compact-control">Analysis
-            <select id="contentMode"><option value="auto">Auto-detect</option><option value="factual">Factual claim</option><option value="argument">Argument</option><option value="opinion">Opinion</option><option value="propaganda">Propaganda / persuasion</option><option value="prediction">Prediction</option><option value="question">Question</option><option value="satire">Satire / unclear</option><option value="mixed">Mixed content</option></select>
-          </label>
         </div>
         <div class="composer">
           <textarea id="input" maxlength="12000" placeholder="Enter the claim, question, statement, post, quote, or text to research…" aria-label="Content to fact-check"></textarea>
           <div class="composer-footer">
             <div class="attachment-zone" id="mediaBox">
-              <label for="mediaInput" class="attach-btn">＋ ＋ Add optional media</label>
+              <label for="mediaInput" class="attach-btn">＋ Add media</label>
               <input id="mediaInput" type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif,audio/mpeg,audio/wav,audio/mp4,audio/ogg,audio/webm,video/mp4,video/webm,video/quicktime,video/mpeg">
               <div id="mediaList" class="file-list">Optional: image, audio, or video · up to 5</div>
             </div>
@@ -55,6 +51,7 @@
         <div class="research-options">
           <button id="advancedToggle" class="link-btn" aria-expanded="false">Options <span>⌄</span></button>
           <div id="advanced" class="advanced hidden">
+            <label>Analysis<select id="contentMode"><option value="auto">Auto-detect</option><option value="factual">Factual claim</option><option value="argument">Argument</option><option value="opinion">Opinion</option><option value="propaganda">Propaganda / persuasion</option><option value="prediction">Prediction</option><option value="question">Question</option><option value="satire">Satire / unclear</option><option value="mixed">Mixed content</option></select></label>
             <label>Detail<select id="detail"><option>quick</option><option selected>standard</option><option>detailed</option></select></label>
             <label>Audience<select id="audience"><option>general</option><option>student</option><option>professional</option><option>research</option></select></label>
             <label>Sources<select id="sourcePref"><option value="any">Any reliable source</option><option value="official">Government / official</option><option value="academic">Academic / scientific</option><option value="news">Major news</option><option value="factcheck">Fact-checking organizations</option></select></label>
@@ -70,11 +67,6 @@
       </div>
       <div class="trust-row"><span>LIVE SOURCES</span><span>CLAIM MAPPING</span><span>SOURCE TRACEABILITY</span><span>UNCERTAINTY-AWARE</span></div>
       <div id="result" aria-live="polite"></div>
-    </section>
-
-    <section id="chat" class="view">
-      <div class="page-head"><div class="eyebrow">RESEARCH ASSISTANT</div><h2>Ask follow-up questions.</h2><p>Use the assistant to understand an investigation. It does not turn unsupported statements into verified facts.</p></div>
-      <div class="chat-card card"><div id="chatLog" class="chat-log"><div class="empty-chat"><span>◌</span><b>Research assistant</b><p>Ask what a source means, what remains uncertain, or what evidence would change a verdict.</p></div></div><div class="chat-compose"><input id="chatInput" maxlength="12000" placeholder="Ask about the evidence…"><button id="send" class="primary">Send</button></div></div>
     </section>
 
     <section id="history" class="view">
