@@ -70,11 +70,12 @@ Uploaded binaries are processed in memory and are not retained as permanent file
 - Maximum redirect count and article-size guard.
 - Bounded history queries.
 - Anonymous browser-scoped history using an HttpOnly, SameSite session cookie.
-- Public share endpoint separated from private history endpoints.
+- Explicitly generated, high-entropy share tokens; numeric history IDs never grant public access.
+- PostgreSQL startup failures are surfaced instead of silently writing history to ephemeral SQLite.
 - PostgreSQL/SQLite indexes for history.
 - Lazy DDGS import so health/UI tests do not fail during dependency discovery.
 - Regression coverage for the production `str.get()` crash.
-- CI workflow for Python 3.12.
+- CI workflow for Python 3.13.5.
 
 ## Environment
 
@@ -158,10 +159,11 @@ For production, set `CORS_ORIGINS` and `ALLOWED_HOSTS` to the actual allowed ori
 - `GET /api/history/{id}`
 - `DELETE /api/history/{id}`
 - `DELETE /api/history`
-- `GET /api/share/{id}`
+- `POST /api/history/{id}/share` — create/reuse an owner-authorized share link
+- `GET /api/share/{token}`
 - `GET /api/health`
 
-`/api/history*` is browser-session scoped. `/api/share/{id}` is intentionally public so a generated share URL can be opened by another person.
+`/api/history*` is browser-session scoped. A result becomes public only after its owner explicitly creates a share link; anyone holding that opaque token can open it at `/share/{token}`. Numeric history IDs are not public access tokens.
 
 ## Accuracy boundaries
 
@@ -178,11 +180,6 @@ This is an evidence-research system, not an oracle.
 
 Groq model availability is account/region dependent and can change. The application now attempts configured models and can discover currently exposed text models after a 404. Vision models remain dependent on a multimodal model being available to the Groq account.
 
-## Verification status of this snapshot
+## Verification status
 
-Local verification performed before packaging:
-
-- Python compilation: **passed**
-- Automated tests: **12 passed**
-
-The complete Render deployment still needs to be exercised after uploading this snapshot because external Groq model availability, Render environment variables, PostgreSQL connectivity, and live search providers cannot be guaranteed by a local test run.
+The earlier baseline passed Python compilation and 12 automated tests before the latest audit changes. New regression tests now cover share-token authorization, same-stage vision rate-limit recovery, malformed request-size headers, and media-only submissions. The latest changes still need a completed CI run and a live Render smoke test; neither should be inferred from a successful GitHub write.
