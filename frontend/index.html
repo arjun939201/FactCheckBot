@@ -6,7 +6,7 @@
   <meta name="description" content="Fact Check — evidence-first claim verification with live web research.">
   <title>Fact Check — Follow the evidence</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="stylesheet" href="/styles.css?v=mobile-blue-layout-20261009">
+  <link rel="stylesheet" href="/styles.css?v=answer-first-url-toolbar-20261009">
 </head>
 <body>
 <div class="shell">
@@ -32,6 +32,7 @@
       </div>
 
       <div class="workspace card">
+        <div class="composer-topbar"><div class="url-entry"><label for="articleUrl">URL</label><input id="articleUrl" type="url" placeholder="Paste article URL (optional)" autocomplete="url"></div><button id="advancedToggle" class="link-btn" aria-expanded="false">Options <span>⌄</span></button></div>
         <div class="composer">
           <div class="claim-input-wrap"><label for="mediaInput" class="claim-attach" aria-label="Attach media" title="Attach image, audio, or video">⌁</label><textarea id="input" maxlength="12000" placeholder="Enter the claim, question, statement, post, quote, or text to research…" aria-label="Content to fact-check"></textarea><div class="claim-char-count"><span id="charCount">0</span>/12,000</div></div>
           <div class="composer-footer">
@@ -41,11 +42,9 @@
               <div id="mediaList" class="file-list">No media added</div>
             </div>
             <div class="char-count"><span id="charCountFooter">0</span>/12,000</div>
-            <div class="url-entry"><label for="articleUrl">URL</label><input id="articleUrl" type="url" placeholder="Paste article URL (optional)" autocomplete="url"></div>
           </div>
         </div>
         <div class="research-options">
-          <button id="advancedToggle" class="link-btn" aria-expanded="false">Options <span>⌄</span></button>
           <div id="advanced" class="advanced hidden">
             <label>Analysis<select id="contentMode"><option value="auto">Auto-detect</option><option value="factual">Factual claim</option><option value="argument">Argument</option><option value="opinion">Opinion</option><option value="propaganda">Propaganda / persuasion</option><option value="prediction">Prediction</option><option value="question">Question</option><option value="satire">Satire / unclear</option><option value="mixed">Mixed content</option></select></label>
             <label>Detail<select id="detail"><option>quick</option><option selected>standard</option><option>detailed</option></select></label>
