@@ -8,7 +8,7 @@ let aiStatusUpdatedAt=Date.now();
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const prefs=()=>({content_mode:$("#contentMode").value,detail:$("#detail").value,audience:$("#audience").value,source_preference:$("#sourcePref").value,region:$("#region").value,language:$("#language").value});
 
-function setView(name){$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.v===name));$('.view').forEach(v=>v.classList.toggle('active',v.id===name));if(name==='history')loadHistory();if(name==='ai-status')refreshAiStatus()}
+function setView(name){$$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.v===name));$$('.view').forEach(v=>v.classList.toggle('active',v.id===name));if(name==='history')loadHistory();if(name==='ai-status')refreshAiStatus()}
 $$('.nav-btn').forEach(b=>b.onclick=()=>{history.replaceState(null,'','#'+b.dataset.v);setView(b.dataset.v)});
 window.addEventListener('hashchange',()=>setView(location.hash.slice(1)||'fact'));setView(location.hash.slice(1)||'fact');
 
