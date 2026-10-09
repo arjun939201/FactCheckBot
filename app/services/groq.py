@@ -22,11 +22,71 @@ _ai_detail = "Waiting for the first AI request"
 _ai_active_requests = 0
 _ai_reset_at = 0.0
 _ai_last_success_at = 0.0
+_ai_token_limit: int | None = None
+_ai_tokens_remaining: int | None = None
+_ai_tokens_reset_at = 0.0
+_ai_last_usage: dict | None = None
+
+
+def _duration_seconds(value: str | None) -> float | None:
+    if not value:
+        return None
+    raw = str(value).strip().lower()
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        pass
+    total = 0.0
+    matches = list(re.finditer(r"(\\d+(?:\\.\\d+)?)\\s*(ms|h|m|s)", raw))
+    if not matches:
+        return None
+    for match in matches:
+        amount = float(match.group(1))
+        unit = match.group(2)
+        total += amount / 1000 if unit == "ms" else amount * {"s": 1, "m": 60, "h": 3600}[unit]
+    return total
+
+
+def _capture_rate_headers(headers) -> None:
+    global _ai_token_limit, _ai_tokens_remaining, _ai_tokens_reset_at
+    try:
+        limit = headers.get("x-ratelimit-limit-tokens")
+        remaining = headers.get("x-ratelimit-remaining-tokens")
+        reset = headers.get("x-ratelimit-reset-tokens")
+        if limit is not None:
+            _ai_token_limit = max(0, int(limit))
+        if remaining is not None:
+            _ai_tokens_remaining = max(0, int(remaining))
+        seconds = _duration_seconds(reset)
+        if seconds is not None:
+            _ai_tokens_reset_at = time.monotonic() + seconds
+    except (TypeError, ValueError):
+        logger.debug("Could not parse provider token rate-limit headers", exc_info=True)
+
+
+def _capture_usage(data: dict) -> None:
+    global _ai_last_usage
+    usage = data.get("usage") if isinstance(data, dict) else None
+    if not isinstance(usage, dict):
+        return
+    prompt = usage.get("prompt_tokens")
+    completion = usage.get("completion_tokens")
+    total = usage.get("total_tokens")
+    if total is None and isinstance(prompt, int) and isinstance(completion, int):
+        total = prompt + completion
+    if any(isinstance(x, (int, float)) for x in (prompt, completion, total)):
+        _ai_last_usage = {
+            "prompt_tokens": prompt if isinstance(prompt, (int, float)) else None,
+            "completion_tokens": completion if isinstance(completion, (int, float)) else None,
+            "total_tokens": total if isinstance(total, (int, float)) else None,
+            "recorded_at": time.time(),
+        }
 
 
 def get_ai_status() -> dict:
     now = time.monotonic()
     retry_after = max(0, math.ceil(_ai_reset_at - now))
+    token_refill_in = max(0, math.ceil(_ai_tokens_reset_at - now))
     last_success_ago = max(0, int(now - _ai_last_success_at)) if _ai_last_success_at else None
 
     # Report observed request capacity, not a generic claim that the provider is
@@ -52,6 +112,10 @@ def get_ai_status() -> dict:
         "active_requests": _ai_active_requests,
         "last_success_ago_seconds": last_success_ago,
         "capacity": "blocked" if retry_after else "one_retry_possible" if state == "retry_ready" else "recent_success" if state == "verified" else "unknown",
+        "token_limit": _ai_token_limit,
+        "tokens_remaining": _ai_tokens_remaining,
+        "token_refill_in_seconds": token_refill_in,
+        "last_request_usage": _ai_last_usage,
     }
 
 class GroqProviderError(RuntimeError):
@@ -131,6 +195,7 @@ async def _request_impl(model, instruction):
             headers={"Authorization":f"Bearer {s.groq_api_key}","Content-Type":"application/json"},
             json={"model":model,"temperature":0.1,"messages":[{"role":"system","content":SYSTEM_PROMPT},{"role":"user","content":instruction}]},
         )
+        _capture_rate_headers(r.headers)
         if r.is_error:
             logger.error("Groq request failed: status=%s model=%s body=%s",r.status_code,model,r.text[:1000])
             if r.status_code == 429:
@@ -155,7 +220,9 @@ async def _request_impl(model, instruction):
             if r.status_code==400 and "reduce the length" in r.text.lower():
                 raise GroqPayloadTooLargeError("Groq rejected the request because the prompt is too large.")
             r.raise_for_status()
-        return r.json()["choices"][0]["message"]["content"]
+        data = r.json()
+        _capture_usage(data)
+        return data["choices"][0]["message"]["content"]
 
 
 def ai_request_started():
