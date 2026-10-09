@@ -426,6 +426,6 @@ def test_progress_wait_resumes_previous_stage():
 
 def test_frontend_html_ids_are_unique():
     html = (Path(__file__).resolve().parents[1] / "frontend" / "index.html").read_text(encoding="utf-8")
-    ids = re.findall(r'\\bid=[\"\\']([^\"\\']+)[\"\\']', html)
+    ids = re.findall(r"\bid=[\"']([^\"']+)[\"']", html)
     duplicates = sorted({value for value in ids if ids.count(value) > 1})
     assert not duplicates, f"Duplicate HTML IDs: {duplicates}"
