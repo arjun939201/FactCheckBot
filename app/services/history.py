@@ -17,14 +17,10 @@ class HistoryStore:
             try:
                 self._init_postgres()
             except Exception as exc:
-                # A stale/unavailable hosted database must not prevent the
-                # web application from starting. Fall back to local SQLite.
-                self.database_error = f"PostgreSQL unavailable: {exc}"
-                self.postgres = False
-                self.url = "sqlite:///./factcheck.db"
-                self.path = Path("./factcheck.db")
-                self.path.parent.mkdir(parents=True, exist_ok=True)
-                self._init_sqlite()
+                # Never silently switch a hosted deployment to ephemeral SQLite:
+                # that makes writes appear successful while durable history is lost.
+                self.database_error = "Configured PostgreSQL database is unavailable"
+                raise RuntimeError(self.database_error) from exc
         elif self.url.startswith("sqlite:///"):
             self.path = Path(self.url.replace("sqlite:///", "", 1))
             self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -56,6 +52,15 @@ class HistoryStore:
                 c.execute("ALTER TABLE history ADD COLUMN share_token TEXT")
             c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_history_share_token ON history(share_token) WHERE share_token IS NOT NULL")
             c.execute("CREATE INDEX IF NOT EXISTS idx_history_owner_created ON history(owner_key, created_at DESC)")
+
+    def ping(self):
+        if self.postgres:
+            with self._psycopg.connect(self.url) as c:
+                c.execute("SELECT 1")
+        else:
+            with self._conn() as c:
+                c.execute("SELECT 1")
+        return True
 
     def _conn(self):
         return sqlite3.connect(self.path, timeout=10)
