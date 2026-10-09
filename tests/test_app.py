@@ -556,3 +556,18 @@ def test_url_and_options_toolbar_precedes_claim_textbox():
     assert html.index('id="advancedToggle"') < textbox
     footer = html[html.index('class="composer-footer"'):html.index('class="research-options"')]
     assert 'class="url-entry"' not in footer
+
+def test_report_heading_is_hidden_until_research_completes():
+    script = (Path(__file__).resolve().parents[1] / "frontend" / "app.js").read_text()
+    assert "function hideResultsHeading(){const heading=$('#resultsHeading');if(heading)heading.classList.add('hidden')}" in script
+    assert "function showResultsHeading(){const heading=$('#resultsHeading');if(heading)heading.classList.remove('hidden')}" in script
+    submit = script.split("async function submitMedia()", 1)[1].split("$('#check').onclick", 1)[0]
+    assert submit.index("hideResultsHeading();busy(true)") < submit.index("await requestWithRateLimitRetry")
+    error = script.split("function renderError(e)", 1)[1].split("async function submitMedia()", 1)[0]
+    assert "hideResultsHeading();" in error
+    assert "showResultsHeading();" not in error
+    result = script.split("function renderResult(d)", 1)[1].split("function renderArticle(d)", 1)[0]
+    article = script.split("function renderArticle(d)", 1)[1].split("function shareAction(id)", 1)[0]
+    assert "showResultsHeading();" in result
+    assert "showResultsHeading();" in article
+
