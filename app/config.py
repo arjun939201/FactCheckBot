@@ -44,10 +44,10 @@ class Settings(BaseSettings):
         if not self.database_url.lower().startswith(("postgresql://", "postgres://")):
             problems.append("DATABASE_URL must point to managed PostgreSQL in production")
         origins = self.cors_origin_list
-        if not origins or "*" in origins or any(not x.startswith(("https://", "http://")) for x in origins):
+        if not origins or any("*" in x or not x.startswith(("https://", "http://")) for x in origins):
             problems.append("CORS_ORIGINS must contain explicit http(s) origins and must not contain *")
         hosts = self.allowed_host_list
-        if not hosts or "*" in hosts or any("://" in x or "/" in x for x in hosts):
+        if not hosts or any("*" in x or "://" in x or "/" in x for x in hosts):
             problems.append("ALLOWED_HOSTS must contain explicit hostnames and must not contain *")
         if problems:
             raise ValueError("Invalid production configuration: " + "; ".join(problems))
