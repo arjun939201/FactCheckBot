@@ -277,7 +277,7 @@ async function sendContextChat(value){
 }
 $('#result').addEventListener('submit',e=>{if(e.target.id==='contextChatForm'){e.preventDefault();sendContextChat($('#contextChatInput')?.value)}});
 $('#result').addEventListener('click',e=>{const b=e.target.closest('[data-chat-prompt]');if(b)sendContextChat(b.dataset.chatPrompt)});
-function showResultsHeading(){const heading=$('#resultsHeading');if(heading)heading.classList.remove('hidden')}
+function showResultsHeading(){const heading=$('#resultsHeading');if(heading)heading.classList.add('hidden')}
 function renderResult(d){
   showResultsHeading();
   const uncertainty=d.uncertainties?.length?'<div class="warning"><b>Uncertainty</b><p>'+esc(d.uncertainties[0])+'</p></div>':'';
