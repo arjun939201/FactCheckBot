@@ -4,7 +4,7 @@ services:
     runtime: python
     buildCommand: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
     startCommand: python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers
-    healthCheckPath: /api/health
+    healthCheckPath: /api/health/readiness
     envVars:
       - key: PYTHON_VERSION
         value: 3.13.5
@@ -16,11 +16,10 @@ services:
         value: openai/gpt-oss-120b
       - key: GROQ_FALLBACK_MODEL
         sync: false
-      # Temporary no-database deployment: SQLite works without a managed DB,
-      # but Render's local filesystem is ephemeral; add PostgreSQL for durable history.
+      # Configure these in Render. Production startup rejects SQLite and wildcard domains.
       - key: DATABASE_URL
-        value: sqlite:///./factcheck.db
+        sync: false
       - key: CORS_ORIGINS
-        value: '*'
+        sync: false
       - key: ALLOWED_HOSTS
-        value: '*'
+        sync: false
