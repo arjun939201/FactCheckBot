@@ -30,12 +30,16 @@ async def fact_check(req:FactCheckRequest, request: Request, response: Response)
     begin_progress(request.headers.get("X-Research-ID"))
     try:r=await run_fact_check(req.text,prefs(req))
     except GroqPayloadTooLargeError as e:
+        update_progress("error")
         raise HTTPException(413,str(e)) from e
     except GroqRateLimitError as e:
+        update_progress("error")
         raise HTTPException(429,str(e),headers={"Retry-After":str(max(1,int(e.retry_after)))}) from e
     except GroqProviderError as e:
+        update_progress("error")
         raise HTTPException(503,str(e)) from e
     except Exception as e:
+        update_progress("error")
         logger.exception("Fact-check failed",extra={"input_length":len(req.text)})
         raise HTTPException(502,"We couldn't complete this fact check right now. Please try again.") from e
     update_progress("complete")
@@ -83,13 +87,17 @@ async def media_fact_check(
     except GroqPayloadTooLargeError as e:
         raise HTTPException(413,str(e)) from e
     except GroqRateLimitError as e:
+        update_progress("error")
         raise HTTPException(429,str(e),headers={"Retry-After":str(max(1,int(e.retry_after)))}) from e
     except GroqProviderError as e:
+        update_progress("error")
         raise HTTPException(503,str(e)) from e
     except SearchError as e:
+        update_progress("error")
         logger.exception("Live evidence retrieval failed",extra={"file_count":len(files),"input_length":len(text)})
         raise HTTPException(502,"Live web evidence could not be retrieved right now. Please try again.") from e
     except Exception as e:
+        update_progress("error")
         logger.exception("Media fact-check failed",extra={"file_count":len(files),"input_length":len(text)})
         raise HTTPException(502,"We couldn't complete this investigation right now. Please try again.") from e
     update_progress("complete")
@@ -101,8 +109,11 @@ async def url_fact_check(req:URLFactCheckRequest, request: Request, response: Re
     try:r=await run_url_fact_check(str(req.url),prefs(req))
     except ValueError as e: raise HTTPException(400,str(e))
     except GroqPayloadTooLargeError as e: raise HTTPException(413,str(e)) from e
-    except GroqProviderError as e: raise HTTPException(503,str(e)) from e
+    except GroqProviderError as e:
+        update_progress("error")
+        raise HTTPException(503,str(e)) from e
     except Exception as e:
+        update_progress("error")
         logger.exception("Article fact-check failed",extra={"url_host":req.url.host})
         raise HTTPException(502,"We couldn't complete this article fact check right now. Please try again.") from e
     update_progress("complete")
