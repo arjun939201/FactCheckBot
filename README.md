@@ -65,7 +65,7 @@ Uploaded binaries are processed in memory and are not retained as permanent file
 - Security headers (`nosniff`, frame protection, referrer policy, permissions policy).
 - Configurable CORS and trusted hosts.
 - GZip compression.
-- SSRF protection and redirect validation for article fetching.
+- Article URL/redirect validation before each request, private/non-global IP rejection, and streaming response-size caps.
 - robots.txt compliance for article retrieval.
 - Maximum redirect count and article-size guard.
 - Bounded history queries.
@@ -182,4 +182,4 @@ Groq model availability is account/region dependent and can change. The applicat
 
 ## Verification status
 
-The earlier baseline passed Python compilation and 12 automated tests before the latest audit changes. New regression tests now cover share-token authorization, same-stage vision rate-limit recovery, malformed request-size headers, and media-only submissions. The latest changes still need a completed CI run and a live Render smoke test; neither should be inferred from a successful GitHub write.
+The earlier baseline passed Python compilation and 12 automated tests before the latest audit changes. New regression tests now cover share-token authorization, same-stage vision rate-limit recovery, malformed request-size headers, media-only submissions, and private-address SSRF guards. The latest changes still need a completed CI run and a live Render smoke test; neither should be inferred from a successful GitHub write.
