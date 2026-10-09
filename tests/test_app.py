@@ -491,3 +491,10 @@ def test_production_settings_reject_embedded_wildcards():
             cors_origins="https://example.com",
             allowed_hosts="*.example.com",
         )
+
+
+def test_frontend_ai_wait_notice_does_not_accumulate():
+    script = (Path(__file__).resolve().parents[1] / "frontend" / "app.js").read_text(encoding="utf-8")
+    assert "function aiWaitMessage()" in script
+    assert "ai-wait-notice" in script
+    assert "status.insertAdjacentHTML('beforeend'" not in script
