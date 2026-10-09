@@ -108,7 +108,9 @@ function busy(on,label='Investigating…',completed=false,failed=false){
 function paintAiStatus(){
   const el=$('#aiStatus');if(!el)return;
   const state=aiStatusSnapshot.state||'unknown';
-  const remaining=Math.max(0,Number(aiStatusSnapshot.retry_after_seconds||0)-Math.floor((Date.now()-aiStatusUpdatedAt)/1000));
+  const elapsed=Math.floor((Date.now()-aiStatusUpdatedAt)/1000);
+  const remaining=Math.max(0,Number(aiStatusSnapshot.retry_after_seconds||0)-elapsed);
+  const refill=Math.max(0,Number(aiStatusSnapshot.token_refill_in_seconds||0)-elapsed);
   const age=aiStatusSnapshot.last_success_ago_seconds;
   el.classList.remove('ai-available','ai-busy','ai-unavailable','ai-unknown');
   const tone=state==='verified'?'ai-available':state==='busy'?'ai-busy':['rate_limited','unavailable'].includes(state)?'ai-unavailable':'ai-unknown';
@@ -116,7 +118,19 @@ function paintAiStatus(){
   const label=state==='verified'?`AI verified · 1 request (${age??0}s ago)`:state==='retry_ready'?'AI retry ready · 1 try':state==='rate_limited'?`AI blocked · ${remaining}s`:state==='stale'?'AI capacity unverified':state==='ready'?'AI untested':state==='busy'?'AI testing request':state==='unavailable'?'AI unavailable':'AI status unknown';
   el.querySelector('span').textContent=label;
   el.title=aiStatusSnapshot.detail||label;
+  const panel=$('#aiUsagePanel');
+  if(panel){
+    const fmt=n=>n==null?'Not reported':Number(n).toLocaleString();
+    const available=aiStatusSnapshot.tokens_remaining,limit=aiStatusSnapshot.token_limit,usage=aiStatusSnapshot.last_request_usage;
+    const refillText=refill>0?formatDuration(refill):aiStatusSnapshot.token_refill_in_seconds!=null&&available!=null?'Reset window elapsed; awaiting fresh provider data':'Not reported yet';
+    const usageText=usage?.total_tokens!=null?`<strong>${fmt(usage.total_tokens)} tokens</strong><div class="mini-meta">Input ${fmt(usage.prompt_tokens)} + output ${fmt(usage.completion_tokens)} · last successful AI call</div>`:'<span class="mini-meta">No usage data returned yet</span>';
+    panel.innerHTML=`<div class="ai-usage-title">AI token usage</div><div class="ai-usage-row"><span>Token availability</span><strong>${available==null?'Not reported':fmt(available)+' remaining'}${limit==null?'':' / '+fmt(limit)}</strong></div><div class="ai-usage-row"><span>Token-window reset</span><strong>${refillText}</strong></div><div class="ai-usage-row usage-total"><span>Last AI call used</span><div>${usageText}</div></div><div class="mini-meta">Provider-reported limits; last AI call is not the total for the full investigation.</div>`;
+  }
 }
+function formatDuration(seconds){const n=Math.max(0,Math.ceil(Number(seconds)||0));return n<60?n+'s':Math.floor(n/60)+'m '+(n%60)+'s'}
+function toggleAiUsage(){const panel=$('#aiUsagePanel'),button=$('#aiStatus');if(!panel||!button)return;const open=panel.classList.toggle('hidden')===false;button.setAttribute('aria-expanded',String(open))}
+$('#aiStatus').addEventListener('click',toggleAiUsage);
+$('#aiStatus').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();toggleAiUsage()}});
 async function refreshAiStatus(){
   try{
     const r=await fetch('/api/ai-status',{cache:'no-store'});
