@@ -25,7 +25,30 @@ $('#mediaInput').onchange=()=>addFiles($('#mediaInput').files);
 ['dragleave','drop'].forEach(e=>$('#mediaBox').addEventListener(e,ev=>{ev.preventDefault();$('#mediaBox').classList.remove('dragging')}));
 $('#mediaBox').addEventListener('drop',ev=>addFiles(ev.dataTransfer.files));
 
-async function request(path,options={}){const r=await fetch('/api'+path,options);const d=await r.json().catch(()=>({}));if(!r.ok){const e=new Error(d.detail||`Request failed (${r.status})`);e.status=r.status;throw e}return d}
+async function request(path,options={}){const r=await fetch('/api'+path,options);const d=await r.json().catch(()=>({}));if(!r.ok){const e=new Error(d.detail||`Request failed (${r.status})`);e.status=r.status;e.retryAfter=Number(r.headers.get('Retry-After')||0);throw e}return d}
+let rateLimitRetryAt=0;
+function renderRetryNotice(){
+  if(!rateLimitRetryAt||!activeProgressId)return;
+  const left=Math.max(0,Math.ceil((rateLimitRetryAt-Date.now())/1000));
+  renderResearchProgress();
+  const status=$('#status');
+  if(status)status.insertAdjacentHTML('beforeend',`<p class="mini-meta" role="status">AI rate limit reached — continuing automatically in ${left}s</p>`);
+}
+const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function requestWithRateLimitRetry(makeRequest,maxRetries=5){
+  for(let attempt=0;;attempt++){
+    try{rateLimitRetryAt=0;return await makeRequest()}
+    catch(e){
+      const isAiLimit=e.status===429&&/AI rate limit|AI analysis is temporarily rate-limited/i.test(e.message);
+      if(!isAiLimit||attempt>=maxRetries)throw e;
+      const match=e.message.match(/about\s+(\d+)\s+seconds/i);
+      const seconds=Math.max(1,e.retryAfter||Number(match?.[1]||0));
+      rateLimitRetryAt=Date.now()+seconds*1000;
+      while(Date.now()<rateLimitRetryAt){renderRetryNotice();await wait(Math.min(1000,rateLimitRetryAt-Date.now()))}
+      rateLimitRetryAt=0;
+    }
+  }
+}
 let statusClearTimer=null,progressPollTimer=null,activeProgressId=null,serverResearchStage='breaking';
 const progressStages=['breaking','researching','collecting','analyzing'];
 function renderResearchProgress(completed=false,failed=false){
@@ -96,6 +119,7 @@ async function refreshAiStatus(){
   }
 }
 setInterval(paintAiStatus,1000);
+setInterval(()=>{if(rateLimitRetryAt)renderRetryNotice()},1000);
 setInterval(refreshAiStatus,3000);
 refreshAiStatus();
 
@@ -108,11 +132,11 @@ async function submitMedia(){
   busy(true);$('#result').innerHTML='';let completed=false,failed=false;
   try{
     if(url){
-      const d=await request('/fact-check/url',{method:'POST',headers:{'Content-Type':'application/json','X-Research-ID':activeProgressId},body:JSON.stringify({url,text:url,...prefs()})});
+      const d=await requestWithRateLimitRetry(()=>request('/fact-check/url',{method:'POST',headers:{'Content-Type':'application/json','X-Research-ID':activeProgressId},body:JSON.stringify({url,text:url,...prefs()})}));
       activeResultId=d.id;renderArticle(d);
     }else{
       const f=new FormData();f.append('text',text);for(const [k,v] of Object.entries(prefs()))f.append(k,v);selectedFiles.forEach(x=>f.append('files',x));
-      const d=await request('/fact-check/media',{method:'POST',headers:{'X-Research-ID':activeProgressId},body:f});activeResultId=d.id;renderResult(d);
+      const d=await requestWithRateLimitRetry(()=>request('/fact-check/media',{method:'POST',headers:{'X-Research-ID':activeProgressId},body:f}));activeResultId=d.id;renderResult(d);
     }
     completed=true;
   }catch(e){failed=true;renderError(e)}finally{busy(false,'',completed,failed)}
