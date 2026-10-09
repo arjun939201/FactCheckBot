@@ -500,6 +500,7 @@ async def run_url_fact_check(url:str,prefs:dict)->ArticleFactCheck:
         "source_quality":x.get("source_quality",0),
         "source_tier":x.get("source_tier","Other"),
     } for x in evidence[:12]]
+    update_progress("analyzing")
     prompt=f"""Article title: {title[:500]}
 Article URL: {url}
 Article text:
