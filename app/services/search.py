@@ -12,6 +12,13 @@ logger=logging.getLogger(__name__)
 class SearchError(Exception):pass
 class SearchRelevanceError(SearchError):pass
 
+# Render's outbound search providers can be throttled. Serialize DDGS attempts and
+# temporarily open a circuit after a failed round so concurrent research questions
+# do not all hammer the same unavailable providers.
+_ddgs_lock = asyncio.Lock()
+_ddgs_unavailable_until = 0.0
+_DDGS_COOLDOWN_SECONDS = 60.0
+
 def _quality(source_type,publisher,url):
     # Trust tier follows validated source classification, not publisher/headline text.
     # Search aggregators and misleading titles must never upgrade a source's authority.
@@ -60,26 +67,34 @@ def _ddgs_search(query,max_results,backend=None):
     return list(DDGS().text(query,**kwargs))
 
 async def _ddgs(query,max_results):
-    # DDGS may hang or be throttled on hosted environments. Bound each provider
-    # separately so two failing fallbacks cannot stall the whole investigation.
-    timeout=max(3.0,float(get_settings().search_timeout))
-    attempts=[(None,min(timeout,4.0)),("google",min(timeout,3.0)),("bing",min(timeout,3.0))]
-    failures=[]
-    for backend,limit in attempts:
-        try:
-            raw=await asyncio.wait_for(
-                asyncio.to_thread(_ddgs_search,query,max_results,backend),
-                timeout=limit,
-            )
-            results=_normalise(raw)
-            if results:return results
-        except Exception as e:
-            failures.append((backend or "primary",type(e).__name__))
-            logger.debug("Web search provider failed: backend=%s error=%s",backend or "primary",type(e).__name__)
-    if failures:
-        logger.warning("DDGS search unavailable after %s bounded attempts: %s",
-                       len(failures),", ".join(f"{backend}={error}" for backend,error in failures))
-    return []
+    global _ddgs_unavailable_until
+    async with _ddgs_lock:
+        now=asyncio.get_running_loop().time()
+        if now < _ddgs_unavailable_until:
+            logger.debug("Skipping DDGS while provider circuit is open for %.1fs",_ddgs_unavailable_until-now)
+            return []
+        timeout=max(3.0,float(get_settings().search_timeout))
+        attempts=[(None,min(timeout,4.0)),("google",min(timeout,3.0)),("bing",min(timeout,3.0))]
+        failures=[]
+        for backend,limit in attempts:
+            try:
+                raw=await asyncio.wait_for(
+                    asyncio.to_thread(_ddgs_search,query,max_results,backend),
+                    timeout=limit,
+                )
+                results=_normalise(raw)
+                if results:
+                    _ddgs_unavailable_until=0.0
+                    return results
+            except Exception as e:
+                failures.append((backend or "primary",type(e).__name__))
+                logger.debug("Web search provider failed: backend=%s error=%s",backend or "primary",type(e).__name__)
+        if failures:
+            _ddgs_unavailable_until=asyncio.get_running_loop().time()+_DDGS_COOLDOWN_SECONDS
+            logger.warning("DDGS search unavailable after %s bounded attempts; pausing retries for %ss: %s",
+                           len(failures),int(_DDGS_COOLDOWN_SECONDS),
+                           ", ".join(f"{backend}={error}" for backend,error in failures))
+        return []
 
 async def _google_news(query,max_results):
     url="https://news.google.com/rss/search?q="+quote_plus(query)+"&hl=en-IN&gl=IN&ceid=IN:en"
