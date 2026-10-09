@@ -12,4 +12,7 @@ jobs:
         with:
           python-version: "3.13.5"
       - run: pip install -r requirements.txt
-      - run: pytest -q
+      - name: Check frontend JavaScript syntax
+        run: node --check frontend/app.js && node --check frontend/share.js
+      - name: Run Python tests
+        run: pytest -q

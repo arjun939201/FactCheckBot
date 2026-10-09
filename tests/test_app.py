@@ -60,7 +60,7 @@ async def test_run_fact_check_normalizes_string_evidence(monkeypatch):
     async def fake_decompose(text, prefs, media_only=False):
         return [{"claim": text, "content_type": "FACTUAL CLAIM"}]
 
-    async def fake_search(claim):
+    async def fake_search(claim, **kwargs):
         return [{
             "url": "https://example.com/evidence",
             "title": "Evidence",
@@ -235,6 +235,8 @@ async def test_media_only_can_generate_substantive_claims(monkeypatch):
     async def fake_groq(instruction):
         return {"claim":"The image says the Prime Minister is illegal","verdict":"UNVERIFIED","confidence":10,"summary":"Insufficient.","reasoning":"Insufficient.","supporting_evidence":[],"contradicting_evidence":[],"sources":[],"claims_checked":[{"claim":"The image says the Prime Minister is illegal","content_type":"FACTUAL CLAIM","verdict":"UNVERIFIED","confidence":10,"summary":"Insufficient.","supporting_evidence_ids":[],"contradicting_evidence_ids":[],"source_quality":0,"corroboration_count":0,"reasoning":"Insufficient.","what_would_change_conclusion":"Relevant evidence."}]}
     monkeypatch.setattr(fc,"decompose_claims",fake_decompose);monkeypatch.setattr(fc,"search_web",fake_search);monkeypatch.setattr(fc,"groq_json",fake_groq)
+    async def fake_questions(text, prefs): return [text]
+    monkeypatch.setattr(fc,"breakdown_questions",fake_questions,raising=False)
     from app.services.media import MediaContext
     result=await fc.run_fact_check("", {"content_mode":"auto"}, [MediaContext("image.jpg","image/jpeg",10,"image","MODI IS AN ILLEGAL PM","political image")], media_only=True)
     assert len(result.claims_checked)==1
@@ -280,6 +282,9 @@ def test_frontend_microcopy_and_upload_ux():
     assert "class=\"claim-attach\"" in html
     assert "removeFile" in js
     assert "dataTransfer.files" in js
+    # Navigation queries must use querySelectorAll helper ($), not querySelector ($).
+    assert "$('.nav-btn,.mobile-tab').forEach" in js
+    assert "$('.view').forEach" in js
 
 
 def test_share_tokens_are_random_and_owner_authorized(monkeypatch, tmp_path):
