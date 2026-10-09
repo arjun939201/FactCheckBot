@@ -37,8 +37,10 @@ class HistoryStore:
             c.execute("""CREATE TABLE IF NOT EXISTS history (
                 id BIGSERIAL PRIMARY KEY, kind TEXT NOT NULL, title TEXT,
                 verdict TEXT NOT NULL, confidence INTEGER, payload TEXT NOT NULL,
-                created_at TEXT NOT NULL, owner_key TEXT)""")
+                created_at TEXT NOT NULL, owner_key TEXT, share_token TEXT UNIQUE)""")
             c.execute("ALTER TABLE history ADD COLUMN IF NOT EXISTS owner_key TEXT")
+            c.execute("ALTER TABLE history ADD COLUMN IF NOT EXISTS share_token TEXT")
+            c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_history_share_token ON history(share_token) WHERE share_token IS NOT NULL")
             c.execute("CREATE INDEX IF NOT EXISTS idx_history_owner_created ON history(owner_key, created_at DESC)")
 
     def _init_sqlite(self):
@@ -46,10 +48,13 @@ class HistoryStore:
             c.execute("""CREATE TABLE IF NOT EXISTS history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, title TEXT,
                 verdict TEXT NOT NULL, confidence INTEGER, payload TEXT NOT NULL,
-                created_at TEXT NOT NULL, owner_key TEXT)""")
+                created_at TEXT NOT NULL, owner_key TEXT, share_token TEXT UNIQUE)""")
             columns = {row[1] for row in c.execute("PRAGMA table_info(history)").fetchall()}
             if "owner_key" not in columns:
                 c.execute("ALTER TABLE history ADD COLUMN owner_key TEXT")
+            if "share_token" not in columns:
+                c.execute("ALTER TABLE history ADD COLUMN share_token TEXT")
+            c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_history_share_token ON history(share_token) WHERE share_token IS NOT NULL")
             c.execute("CREATE INDEX IF NOT EXISTS idx_history_owner_created ON history(owner_key, created_at DESC)")
 
     def _conn(self):
@@ -87,6 +92,56 @@ class HistoryStore:
                     row = c.execute("SELECT payload FROM history WHERE id=?", (id,)).fetchone()
                 else:
                     row = c.execute("SELECT payload FROM history WHERE id=? AND owner_key=?", (id, owner_key)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def create_share(self, id, owner_key):
+        """Create/reuse an unguessable public token, only for the owning browser session."""
+        token = secrets.token_urlsafe(32)
+        if self.postgres:
+            with self._psycopg.connect(self.url) as c:
+                row = c.execute(
+                    "SELECT share_token FROM history WHERE id=%s AND owner_key=%s",
+                    (id, owner_key),
+                ).fetchone()
+                if not row:
+                    return None
+                if row[0]:
+                    return row[0]
+                c.execute(
+                    "UPDATE history SET share_token=%s WHERE id=%s AND owner_key=%s AND share_token IS NULL",
+                    (token, id, owner_key),
+                )
+                row = c.execute(
+                    "SELECT share_token FROM history WHERE id=%s AND owner_key=%s",
+                    (id, owner_key),
+                ).fetchone()
+                return row[0] if row else None
+        with self._conn() as c:
+            row = c.execute(
+                "SELECT share_token FROM history WHERE id=? AND owner_key=?", (id, owner_key)
+            ).fetchone()
+            if not row:
+                return None
+            if row[0]:
+                return row[0]
+            c.execute(
+                "UPDATE history SET share_token=? WHERE id=? AND owner_key=? AND share_token IS NULL",
+                (token, id, owner_key),
+            )
+            row = c.execute(
+                "SELECT share_token FROM history WHERE id=? AND owner_key=?", (id, owner_key)
+            ).fetchone()
+            return row[0] if row else None
+
+    def get_shared(self, token):
+        if not token or len(token) > 100:
+            return None
+        if self.postgres:
+            with self._psycopg.connect(self.url) as c:
+                row = c.execute("SELECT payload FROM history WHERE share_token=%s", (token,)).fetchone()
+        else:
+            with self._conn() as c:
+                row = c.execute("SELECT payload FROM history WHERE share_token=?", (token,)).fetchone()
         return json.loads(row[0]) if row else None
 
     def delete(self, id, owner_key):
