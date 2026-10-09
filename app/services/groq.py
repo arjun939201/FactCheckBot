@@ -49,6 +49,21 @@ def _duration_seconds(value: str | None) -> float | None:
     return total
 
 
+
+def _retry_delay_from_message(message: str, fallback: float) -> float:
+    """Read compound provider hints such as '1h 20m' as well as seconds."""
+    match = re.search(
+        r"try again in\\s+([0-9.]+\\s*(?:ms|h|m|s)(?:\\s*[0-9.]+\\s*(?:ms|h|m|s))*)",
+        str(message or ""),
+        flags=re.I,
+    )
+    if match:
+        parsed = _duration_seconds(match.group(1))
+        if parsed is not None:
+            return max(0.5, parsed)
+    return max(0.5, float(fallback))
+
+
 def _capture_rate_headers(headers) -> None:
     global _ai_token_limit, _ai_tokens_remaining, _ai_tokens_reset_at
     try:
@@ -227,8 +242,7 @@ async def _request_impl(model, instruction):
                     message = str(r.json().get("error", {}).get("message", ""))
                 except Exception:
                     message = r.text
-                match = re.search(r"try again in\s+([0-9.]+)s", message, flags=re.I)
-                if match:
+                retry_after = _retry_delay_from_message(message, retry_after)
                     retry_after = float(match.group(1))
                 limit_kind = "tpd" if re.search(r"tokens? per day|\bTPD\b|daily token", message, flags=re.I) else "tpm" if re.search(r"tokens? per minute|\bTPM\b|token rate limit", message, flags=re.I) else "rpm" if re.search(r"requests? per minute|\bRPM\b|request rate limit", message, flags=re.I) else "unknown"
                 requested_match = re.search(r"requested\s+(\d+)\s+tokens?", message, flags=re.I)
@@ -325,7 +339,7 @@ async def _request_until_available(model, instruction):
             # use the retry hint from the specific rate-limit response.
             now = time.monotonic()
             reset_in = max(0.0, _ai_tokens_reset_at - now)
-            delay = reset_in if e.limit_kind == "tpm" and reset_in > 0 else max(0.5, e.retry_after)
+            delay = reset_in if e.limit_kind in {"tpm", "tpd"} and reset_in > 0 else max(0.5, e.retry_after)
             logger.warning(
                 "AI stage paused for provider capacity: kind=%s required_tokens=%s remaining_tokens=%s retry_in=%.1fs",
                 e.limit_kind, e.required_tokens or _ai_required_tokens_estimate,
