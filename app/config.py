@@ -1,5 +1,5 @@
 from functools import lru_cache
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,6 +32,26 @@ class Settings(BaseSettings):
     groq_claim_input_chars: int = Field(default=9000, gt=1000, le=20000)
     groq_evidence_excerpt_chars: int = Field(default=1400, gt=300, le=5000)
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
+
+    @model_validator(mode="after")
+    def validate_production_settings(self):
+        if self.app_env.strip().lower() != "production":
+            return self
+
+        problems = []
+        if not self.groq_api_key or not self.groq_api_key.strip():
+            problems.append("GROQ_API_KEY must be configured")
+        if not self.database_url.lower().startswith(("postgresql://", "postgres://")):
+            problems.append("DATABASE_URL must point to managed PostgreSQL in production")
+        origins = self.cors_origin_list
+        if not origins or "*" in origins or any(not x.startswith(("https://", "http://")) for x in origins):
+            problems.append("CORS_ORIGINS must contain explicit http(s) origins and must not contain *")
+        hosts = self.allowed_host_list
+        if not hosts or "*" in hosts or any("://" in x or "/" in x for x in hosts):
+            problems.append("ALLOWED_HOSTS must contain explicit hostnames and must not contain *")
+        if problems:
+            raise ValueError("Invalid production configuration: " + "; ".join(problems))
+        return self
 
     @property
     def cors_origin_list(self) -> list[str]:
