@@ -81,13 +81,9 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
     simple_question = explicit_question and len(primary_text) <= 300 and not media_only
     if simple_question:
         claims=[{"claim":primary_text,"content_type":"QUESTION"}]
-        # Even short questions may need contextual subquestions (current status,
-        # responsible entity, dates, or duration). Keep the original question too;
-        # the targeted subquestions improve retrieval without changing user intent.
-        from .groq import breakdown_questions
-        research_questions=await breakdown_questions(primary_text,prefs)
-        if not research_questions:
-            research_questions=[primary_text]
+        # Keep simple questions on a one-search, one-synthesis path. Planning
+        # subquestions costs another AI call and often repeats the user's wording.
+        research_questions=[primary_text]
     else:
         claims=await decompose_claims(primary_for_model,prefs,media_only=media_only)
         if explicit_question and claims:
@@ -103,11 +99,15 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
             research_questions = [f"What evidence directly answers or verifies this input: {primary_text[:500]}?"]
 
     # Select evidence resources for this context before searching.
-    try:
-        resource_plan = await plan_resources(primary_text, research_questions, prefs)
-    except Exception:
-        # Resource planning must improve retrieval, never make the investigation unavailable.
+    if simple_question:
+        # A single direct query needs no extra AI resource-planning call.
         resource_plan = {}
+    else:
+        try:
+            resource_plan = await plan_resources(primary_text, research_questions, prefs)
+        except Exception:
+            # Resource planning must improve retrieval, never make the investigation unavailable.
+            resource_plan = {}
     resource_plan.setdefault("context", "general")
     resource_plan.setdefault("resource_types", [])
     resource_plan.setdefault("preferred_domains", [])
@@ -202,17 +202,18 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
         item["evidence_id"]=f"E{i:02d}"
     semantic_research = {}
     update_progress("analyzing")
-    try:
-        semantic_research = await assess_research_evidence(primary_text, research_questions, evidence)
-    except Exception:
-        # Keep the workflow available if the assessor is rate-limited; retain the
-        # explicit relevance metadata for the final synthesis to judge cautiously.
-        semantic_research = {}
+    if not simple_question:
+        try:
+            semantic_research = await assess_research_evidence(primary_text, research_questions, evidence)
+        except Exception:
+            # Keep the workflow available if the assessor is rate-limited; retain the
+            # explicit relevance metadata for the final synthesis to judge cautiously.
+            semantic_research = {}
 
     # Bounded sufficiency gate: if the first evidence pass leaves framed
     # questions unanswered, run one targeted repair pass for those gaps only.
     # This avoids both premature "UNVERIFIED" results and unbounded search loops.
-    if isinstance(semantic_research, dict) and research_questions:
+    if not simple_question and isinstance(semantic_research, dict) and research_questions:
         answers = semantic_research.get("question_answers", [])
         answered = {
             " ".join(str(item.get("question", "")).lower().split())
