@@ -244,26 +244,19 @@ function resourcePlanCard(d){
     '</section>';
 }
 function researchCards(d){
-  const qs=d.research_questions||[];
-  const rd=d.research_data||[];
+  const qs=d.research_questions||[], rd=d.research_data||[];
   if(!qs.length&&!rd.length)return '';
   const byQ=new Map(rd.map(x=>[x.question,x]));
-  return `<section class="result-section research-trace"><h3>Research process</h3>
-    <div class="process-steps">
-      <div><b>1. Input</b><p>Original user input</p></div>
-      <div><b>2. Breakdown</b><p>${qs.length} research question(s)</p></div>
-      <div><b>3. Web search</b><p>Live sources searched</p></div>
-      <div><b>4. Raw research</b><p>Question-level findings</p></div>
-      <div><b>5. Synthesis</b><p>Answer + verdict</p></div>
-    </div>
-    ${qs.map((q,i)=>{
-      const x=byQ.get(q)||{};
-      return `<article class="research-item">
-        <b>Q${i+1}: ${esc(q)}</b>
-        <p>${esc(x.answer||'No sufficient retrieved answer.')}</p>
-        ${x.evidence_ids?.length?`<div class="mini-meta">Evidence: ${esc(x.evidence_ids.join(', '))}</div>`:''}
-      </article>`;
-    }).join('')}
+  const stages=[
+    ['Input investigated', 'Original question preserved', d.claim||''],
+    ['Researching', qs.length+' targeted research question(s)', qs.join('\\n')],
+    ['Live evidence', (d.sources||[]).length+' source(s) retrieved', (d.sources||[]).map(x=>(x.title||'Source')+' — '+(x.url||'')).join('\\n')],
+    ['Results verifying', rd.length+' question-level finding(s)', rd.map(x=>x.question+'\\n'+x.answer+'\\nEvidence: '+(x.evidence_ids||[]).join(', ')).join('\\n\\n')],
+    ['AI synthesis', 'Answer and uncertainty review', (d.summary||'')+'\\n\\nUncertainty: '+(d.uncertainties||[]).join('; ')]
+  ];
+  return `<section class="result-section research-trace"><h3>AI investigation steps</h3>
+    <div class="process-steps">${stages.map((s,i)=>`<details class="${i===0?'done':''}"><summary>${i+1}. ${esc(s[0])}</summary><div class="process-step-data"><p><b>${esc(s[1])}</b></p><p>${esc(s[2]||'No additional data returned for this stage.')}</p></div></details>`).join('')}</div>
+    ${qs.map((q,i)=>{const x=byQ.get(q)||{};return `<article class="research-item"><b>Q${i+1}: ${esc(q)}</b><p>${esc(x.answer||'No sufficient retrieved answer.')}</p>${x.evidence_ids?.length?`<div class="mini-meta">Evidence: ${esc(x.evidence_ids.join(', '))}</div>`:''}<details><summary>View AI research data</summary><div class="research-data-detail">${esc(JSON.stringify(x,null,2))}</div></details></article>`;}).join('')}
   </section>`;
 }
 function contextChatPanel(d,article=false){
@@ -292,7 +285,7 @@ $('#result').addEventListener('submit',e=>{if(e.target.id==='contextChatForm'){e
 $('#result').addEventListener('click',e=>{const b=e.target.closest('[data-chat-prompt]');if(b)sendContextChat(b.dataset.chatPrompt)});
 function renderResult(d){
   const uncertainty=d.uncertainties?.length?'<div class="warning"><b>Uncertainty:</b> '+esc(d.uncertainties[0])+'</div>':'';
-  $('#result').innerHTML=reportShell(d)+'<div class="result-grid"><div><section class="result-section final-answer"><h3>'+(String(d.content_type||'').toUpperCase()==='QUESTION'?'ANSWER':'Conclusion')+'</h3><p class="summary">'+esc(d.summary||d.reasoning||'No grounded answer was available.')+'</p></section><section class="result-section"><h3>Sources</h3>'+sourceCards(d.sources)+'</section>'+uncertainty+'</div></div>'+contextChatPanel(d)+shareAction(d.id)+'</div>';
+  $('#result').innerHTML=reportShell(d)+researchCards(d)+'<div class="result-grid"><div><section class="result-section final-answer"><h3>'+(String(d.content_type||'').toUpperCase()==='QUESTION'?'ANSWER':'Conclusion')+'</h3><p class="summary">'+esc(d.summary||d.reasoning||'No grounded answer was available.')+'</p></section><section class="result-section"><h3>Sources</h3>'+sourceCards(d.sources)+'</section>'+uncertainty+'</div></div>'+contextChatPanel(d)+shareAction(d.id)+'</div>';
 }
 function renderArticle(d){
   $('#result').innerHTML=reportShell(d,true)+`<div class="result-grid"><div><section class="result-section"><h3>Bottom line</h3><p class="summary">${esc(d.summary)}</p></section><section class="result-section"><h3>Claims</h3>${claims((d.claims_checked||[]).map(c=>({...c,content_type:'ARTICLE CLAIM',source_quality:0,corroboration_count:0})))}</section></div><aside><section class="result-section"><h3>Sources</h3>${sourceCards(d.sources)}</section>${d.uncertainties?.length?`<div class="warning"><b>Uncertainty</b><ul>${d.uncertainties.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`:''}</aside></div>`+contextChatPanel(d,true)+shareAction(d.id)+`</div>`}

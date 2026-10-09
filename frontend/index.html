@@ -6,7 +6,7 @@
   <meta name="description" content="Fact Check — evidence-first claim verification with live web research.">
   <title>Fact Check — Follow the evidence</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="stylesheet" href="/styles.css?v=ai-status-20261009">
+  <link rel="stylesheet" href="/styles.css?v=research-workspace-20261009">
 </head>
 <body>
 <div class="shell">
@@ -18,7 +18,7 @@
       <button data-v="fact" class="nav-btn active">Research</button>
       <button data-v="history" class="nav-btn">History</button>
       <button data-v="settings" class="nav-btn">Settings</button>
-      <button data-v="ai-status" class="nav-btn">AI Status</button>
+      <button data-v="ai-status" class="nav-btn">AI meter</button>
     </nav>
     <div class="status-group"><div class="status-pill ai-status ai-unknown" id="aiStatus" role="button" tabindex="0" aria-expanded="false" aria-controls="aiUsagePanel" title="Tap to view token availability and recent usage"><i></i><span>AI status unknown</span></div><div class="status-pill" id="systemStatus"><i></i><span>System ready</span></div><div id="aiUsagePanel" class="ai-usage-panel hidden" aria-live="polite"></div></div>
   </header>
@@ -61,7 +61,7 @@
         </div>
       </div>
       <div class="trust-row"><span>LIVE SOURCES</span><span>CLAIM MAPPING</span><span>SOURCE TRACEABILITY</span><span>UNCERTAINTY-AWARE</span></div>
-      <div id="result" aria-live="polite"></div>
+      <div class="results-heading"><span class="eyebrow">AI INVESTIGATION</span><h2>AI Investigated results</h2><p>Follow each stage and expand the completed steps to inspect the research data.</p></div><div id="result" aria-live="polite"></div>
     </section>
 
     <section id="history" class="view">
@@ -87,6 +87,6 @@
   </main>
   <footer><span>Fact Check</span><span>Evidence over confidence.</span><span id="version"></span></footer>
 </div>
-<script src="/app.js?v=classify-groq-tpd-20261009"></script>
+<script src="/app.js?v=investigation-workspace-20261009"></script>
 </body>
 </html>
