@@ -300,3 +300,28 @@ async def test_request_guard_rejects_malformed_content_length(monkeypatch):
 
     response=await middleware.request_guard(RequestStub(),next_handler)
     assert response.status_code==400
+
+
+def test_media_only_investigation_is_supported(monkeypatch):
+    import app.routes.factcheck as route
+    from app.models.factcheck import FactCheckResult
+    from app.services.media import MediaContext
+
+    async def fake_extract(file,budget):
+        return MediaContext("x.jpg","image/jpeg",1,"image",extracted_text="A visible claim")
+    async def fake_run(text,prefs,contexts,media_only=False):
+        assert media_only is True
+        assert contexts and contexts[0].extracted_text=="A visible claim"
+        return FactCheckResult(
+            claim=text,verdict="UNVERIFIED",confidence=0,
+            summary="Insufficient evidence.",reasoning="No live evidence supplied."
+        )
+    async def fake_save(*args,**kwargs):
+        return 987
+
+    monkeypatch.setattr(route,"extract_media",fake_extract)
+    monkeypatch.setattr(route,"run_fact_check",fake_run)
+    monkeypatch.setattr(route,"_save",fake_save)
+    response=client.post("/api/fact-check/media",files={"files":("x.jpg",b"x","image/jpeg")})
+    assert response.status_code==200
+    assert response.json()["id"]==987
