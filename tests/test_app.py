@@ -545,3 +545,14 @@ def test_report_renders_answer_before_investigation_process():
         answer_pos = section.index('class="answer-panel"')
         process_pos = section.index("researchCards(d)")
         assert answer_pos < process_pos
+
+
+def test_url_and_options_toolbar_precedes_claim_textbox():
+    html = client.get("/").text
+    toolbar = html.index('class="composer-topbar"')
+    textbox = html.index('id="input"')
+    assert toolbar < textbox
+    assert html.index('id="articleUrl"') < textbox
+    assert html.index('id="advancedToggle"') < textbox
+    footer = html[html.index('class="composer-footer"'):html.index('class="research-options"')]
+    assert 'class="url-entry"' not in footer
