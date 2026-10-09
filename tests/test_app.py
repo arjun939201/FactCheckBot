@@ -109,6 +109,14 @@ async def test_run_fact_check_normalizes_string_evidence(monkeypatch):
 @pytest.mark.asyncio
 async def test_vision_429_waits_and_retries_same_stage(monkeypatch):
     import app.services.media as media
+    import app.services.groq as groq
+
+    for name,value in {
+        "_ai_active_requests":0,"_ai_state":"unknown","_ai_detail":"test",
+        "_ai_reset_at":0.0,"_ai_last_success_at":0.0,
+        "_ai_rate_limit_kind":"unknown","_ai_required_tokens_estimate":None,
+    }.items():
+        monkeypatch.setattr(groq,name,value)
 
     class FakeResponse:
         def __init__(self, status_code):
@@ -332,6 +340,9 @@ def test_successful_ai_retry_clears_stale_rate_limit(monkeypatch):
     import app.services.groq as groq
 
     monkeypatch.setattr(groq,"_ai_active_requests",1)
+    monkeypatch.setattr(groq,"_ai_state","unavailable")
+    monkeypatch.setattr(groq,"_ai_detail","AI rate limit reached")
+    monkeypatch.setattr(groq,"_ai_last_success_at",0.0)
     monkeypatch.setattr(groq,"_ai_reset_at",time.monotonic()+60)
     monkeypatch.setattr(groq,"_ai_rate_limit_kind","tpm")
     monkeypatch.setattr(groq,"_ai_required_tokens_estimate",100)
