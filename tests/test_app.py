@@ -349,3 +349,29 @@ def test_article_fetcher_rejects_private_and_non_http_targets():
     assert not _public_http_url("http://localhost/")
     assert not _public_http_url("ftp://example.com/")
     assert not _public_http_url("http://example.com:8080/")
+
+
+@pytest.mark.asyncio
+async def test_article_fetcher_validates_redirect_before_following(monkeypatch):
+    import app.services.article_parser as parser
+
+    class RedirectResponse:
+        status_code=302
+        headers={"location":"http://127.0.0.1/private"}
+        async def __aenter__(self): return self
+        async def __aexit__(self,*args): pass
+
+    class FakeClient:
+        calls=[]
+        async def __aenter__(self): return self
+        async def __aexit__(self,*args): pass
+        def stream(self,method,url):
+            self.calls.append(url)
+            return RedirectResponse()
+
+    fake=FakeClient()
+    monkeypatch.setattr(parser.httpx,"AsyncClient",lambda *a,**k:fake)
+    monkeypatch.setattr(parser,"_public_http_url",lambda url:url=="https://public.example/start")
+    with pytest.raises(parser.ArticleFetchError):
+        await parser._request_limited("https://public.example/start","test",1,1024)
+    assert fake.calls==["https://public.example/start"]
