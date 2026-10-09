@@ -301,6 +301,33 @@ async def _request(model, instruction):
         ai_request_finished()
 
 
+async def _request_until_available(model, instruction):
+    """Keep this exact AI stage alive across temporary provider token limits."""
+    from .progress import update_progress
+    while True:
+        try:
+            result = await _request(model, instruction)
+            update_progress("analyzing")
+            return result
+        except GroqRateLimitError as e:
+            update_progress("waiting_ai")
+            # Prefer Groq's token-window reset when it supplied one; otherwise
+            # use the retry hint from the specific rate-limit response.
+            now = time.monotonic()
+            reset_in = max(0.0, _ai_tokens_reset_at - now)
+            delay = reset_in if e.limit_kind == "tpm" and reset_in > 0 else max(0.5, e.retry_after)
+            logger.warning(
+                "AI stage paused for provider capacity: kind=%s required_tokens=%s remaining_tokens=%s retry_in=%.1fs",
+                e.limit_kind, e.required_tokens or _ai_required_tokens_estimate,
+                _ai_tokens_remaining, delay,
+            )
+            # Short sleeps let status/progress remain responsive; no new
+            # investigation or search is launched while this same call waits.
+            deadline = time.monotonic() + delay
+            while time.monotonic() < deadline:
+                await asyncio.sleep(min(1.0, max(0.1, deadline - time.monotonic())))
+
+
 async def groq_json(instruction):
     s=get_settings()
     if not s.groq_api_key:
@@ -318,18 +345,10 @@ async def groq_json(instruction):
         # Retired/stale model names can remain in Render environment variables.
         # A 404 must be treated as configuration fallback, not as a request failure.
         try:
-            # TPM limits are temporary. Retry once/twice using Groq's own retry
-            # hint instead of failing the whole research request immediately.
-            for attempt in range(3):
-                try:
-                    content=await _request(model,instruction)
-                    return _parse_json(content)
-                except GroqRateLimitError as e:
-                    if attempt >= 2:
-                        raise
-                    delay=min(max(1.0,e.retry_after),20.0)
-                    logger.warning("Groq TPM limit reached; retry %s/2 after %.1fs",attempt+1,delay)
-                    await asyncio.sleep(delay)
+            # Keep the exact same prompt and pipeline stage alive until the
+            # provider accepts it; do not restart evidence collection.
+            content=await _request_until_available(model,instruction)
+            return _parse_json(content)
         except httpx.HTTPStatusError as e:
             last_error=e
             if e.response.status_code!=404:
@@ -347,7 +366,7 @@ async def groq_json(instruction):
             continue
         try:
             logger.info("Retrying Groq request with discovered compatible model=%s",model)
-            content=await _request(model,instruction)
+            content=await _request_until_available(model,instruction)
             return _parse_json(content)
         except httpx.HTTPStatusError as e:
             if e.response.status_code==404:
