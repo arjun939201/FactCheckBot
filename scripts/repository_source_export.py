@@ -58,6 +58,7 @@ def wrap_lines(source,width):
 included=[]; excluded=[]
 for p in sorted(ROOT.rglob("*")):
     if not p.is_file() or OUT in p.parents: continue
+    if any(part in SKIP_DIRS for part in p.relative_to(ROOT).parts): continue
     ok,value=read_safe(p); rel=p.relative_to(ROOT).as_posix()
     if ok:
         raw=value.encode("utf-8")
