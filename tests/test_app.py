@@ -528,3 +528,11 @@ def test_media_rate_limit_details_uses_backoff_when_daily_reset_missing():
     assert kind == "tpd"
     assert required is None
     assert delay == 240
+
+
+def test_text_rate_limit_parser_honors_compound_retry_hints():
+    from app.services.groq import _retry_delay_from_message
+
+    assert _retry_delay_from_message("Rate limit. Try again in 1h 20m", 10) == 4800
+    assert _retry_delay_from_message("Try again in 2.5s", 10) == 2.5
+    assert _retry_delay_from_message("No reset hint", 10) == 10
