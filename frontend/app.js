@@ -45,7 +45,7 @@ async function waitUntilAiCanRetry(){
       if(r.ok){
         const d=await r.json();
         aiStatusSnapshot={...d};aiStatusUpdatedAt=Date.now();paintAiStatus();
-        if(['retry_ready','verified','stale','ready'].includes(d.state))return;
+        if(d.token_capacity_sufficient===true||['retry_ready','verified','stale','ready'].includes(d.state))return;
       }
     }catch{}
     await wait(3000);
