@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from pydantic import ValidationError
 from ..models.factcheck import FactCheckResult,ArticleFactCheck,MediaAttachment
 from ..config import get_settings
-from .groq import groq_json,factcheck_instruction,decompose_claims,plan_resources,assess_research_evidence
+from .groq import groq_json,factcheck_instruction,decompose_claims,plan_resources,assess_research_evidence,breakdown_questions
 from .search import search_web, SearchError, SearchRelevanceError
 from .progress import update_progress
 
@@ -93,7 +93,6 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
         if not claims:
             claims=[{"claim":primary_text,"content_type":prefs.get("content_mode","auto")}]
         claims=claims[:4]
-        from .groq import breakdown_questions
         research_questions = await breakdown_questions(primary_text, prefs)
         if not research_questions:
             research_questions = [f"What evidence directly answers or verifies this input: {primary_text[:500]}?"]
