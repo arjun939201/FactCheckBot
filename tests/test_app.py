@@ -375,3 +375,20 @@ async def test_article_fetcher_validates_redirect_before_following(monkeypatch):
     with pytest.raises(parser.ArticleFetchError):
         await parser._request_limited("https://public.example/start","test",1,1024)
     assert fake.calls==["https://public.example/start"]
+
+
+def test_progress_wait_resumes_previous_stage():
+    from app.services import progress
+
+    context_token=progress._current_id.set("progress-resume-test")
+    try:
+        progress.begin_progress("progress-resume-test")
+        progress.update_progress("researching")
+        progress.update_progress("waiting_ai")
+        assert progress.get_progress("progress-resume-test")["stage"]=="waiting_ai"
+        progress.update_progress("resume")
+        assert progress.get_progress("progress-resume-test")["stage"]=="researching"
+    finally:
+        progress._current_id.reset(context_token)
+        with progress._lock:
+            progress._progress.pop("progress-resume-test",None)
