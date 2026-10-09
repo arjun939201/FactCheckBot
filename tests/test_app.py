@@ -498,3 +498,33 @@ def test_frontend_ai_wait_notice_does_not_accumulate():
     assert "function aiWaitMessage()" in script
     assert "ai-wait-notice" in script
     assert "status.insertAdjacentHTML('beforeend'" not in script
+
+
+def test_media_rate_limit_details_honors_daily_reset_and_token_estimate():
+    from app.services.media import _rate_limit_details
+
+    class Response:
+        headers = {"Retry-After": "2", "x-ratelimit-reset-tokens": "1h2m"}
+        text = ""
+        def json(self):
+            return {"error": {"message": "Daily tokens per day limit; requested 12000 tokens. Try again in 45m"}}
+
+    delay, kind, required = _rate_limit_details(Response())
+    assert kind == "tpd"
+    assert required == 12000
+    assert delay == 3720
+
+
+def test_media_rate_limit_details_uses_backoff_when_daily_reset_missing():
+    from app.services.media import _rate_limit_details
+
+    class Response:
+        headers = {}
+        text = ""
+        def json(self):
+            return {"error": {"message": "Daily tokens per day limit reached"}}
+
+    delay, kind, required = _rate_limit_details(Response(), attempt=2)
+    assert kind == "tpd"
+    assert required is None
+    assert delay == 240
