@@ -325,3 +325,17 @@ def test_media_only_investigation_is_supported(monkeypatch):
     response=client.post("/api/fact-check/media",files={"files":("x.jpg",b"x","image/jpeg")})
     assert response.status_code==200
     assert response.json()["id"]==987
+
+
+def test_successful_ai_retry_clears_stale_rate_limit(monkeypatch):
+    import time
+    import app.services.groq as groq
+
+    monkeypatch.setattr(groq,"_ai_active_requests",1)
+    monkeypatch.setattr(groq,"_ai_reset_at",time.monotonic()+60)
+    monkeypatch.setattr(groq,"_ai_rate_limit_kind","tpm")
+    monkeypatch.setattr(groq,"_ai_required_tokens_estimate",100)
+    groq.ai_request_succeeded()
+    assert groq._ai_reset_at==0
+    assert groq._ai_rate_limit_kind=="unknown"
+    assert groq._ai_required_tokens_estimate is None
