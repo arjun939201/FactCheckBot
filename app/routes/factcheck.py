@@ -79,13 +79,18 @@ async def media_fact_check(
         r=await run_fact_check(validated.text,prefs(validated),contexts,media_only=not text.strip())
         if media_errors:
             r.uncertainties.extend(media_errors)
-    except ValueError as e: raise HTTPException(400,str(e)) from e
+    except ValueError as e:
+        update_progress("error")
+        raise HTTPException(400,str(e)) from e
     except MediaRateLimitError as e:
+        update_progress("error")
         headers={"Retry-After":str(max(1,int(e.retry_after or 5)))}
         raise HTTPException(429,str(e),headers=headers) from e
     except MediaCapabilityError as e:
+        update_progress("error")
         raise HTTPException(503,str(e)) from e
     except GroqPayloadTooLargeError as e:
+        update_progress("error")
         raise HTTPException(413,str(e)) from e
     except GroqRateLimitError as e:
         update_progress("error")
