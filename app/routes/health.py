@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from ..config import get_settings
+from ..services.groq import get_ai_status
 
 router = APIRouter()
 
@@ -19,3 +20,13 @@ def readiness():
 def capabilities():
     s=get_settings()
     return {"text_research":bool(s.groq_api_key),"article_research":True,"web_search":True,"history":True,"chat":bool(s.groq_api_key),"media_upload":True,"media_visual_analysis":"dynamic","transcription":bool(s.groq_api_key)}
+
+
+@router.get("/ai-status")
+def ai_status():
+    """Report the last observed AI state and any provider-reported cooldown."""
+    s = get_settings()
+    status = get_ai_status()
+    if not s.groq_api_key:
+        status.update({"state": "unavailable", "detail": "AI API key is not configured", "retry_after_seconds": 0})
+    return status
