@@ -41,3 +41,4 @@
   .status-group .status-pill:not(.ai-status){display:none}
   .ai-status{font-size:10px;max-width:150px;overflow:hidden;text-overflow:ellipsis}
 }
+.run-status{display:flex;align-items:center;gap:7px}.progress-done{display:inline-grid;place-items:center;width:17px;height:17px;border-radius:50%;background:#e5f5ec;color:#137a4b;font-size:12px;font-weight:900;line-height:1}
