@@ -5,7 +5,7 @@ from time import time
 _current_id=ContextVar("research_progress_id",default=None)
 _progress={}
 _lock=Lock()
-_STAGE_ORDER={"breaking":0,"researching":1,"collecting":2,"complete":3,"error":3}
+_STAGE_ORDER={"breaking":0,"researching":1,"collecting":2,"analyzing":3,"complete":4,"error":4}
 
 def begin_progress(progress_id:str|None):
     _current_id.set(progress_id)
