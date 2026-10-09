@@ -109,7 +109,7 @@ for no,group in enumerate(groups,1):
             if j%2: d.rectangle((x+10,yy-1,x+CW-10,yy+LH-1),fill="#131f35")
             xx=x+24
             for tok,val in lex(line,lexer):
-                shown=val.expandtabs(4)
+                shown=val.replace("\n","").replace("\r","").expandtabs(4)
                 if shown:
                     d.text((xx,yy),shown,font=font(FS),fill=color(tok))
                     xx+=d.textlength(shown,font=font(FS))
@@ -170,7 +170,7 @@ if MW*MH<=180_000_000:
                 except Exception: code_lexer=TextLexer()
                 xx=x+12
                 for tok,val in lex(line,code_lexer):
-                    shown=val.expandtabs(4)
+                    shown=val.replace("\n","").replace("\r","").expandtabs(4)
                     if shown:
                         d.text((xx,yy),shown,font=font(MFS),fill=color(tok))
                         xx+=d.textlength(shown,font=font(MFS))
