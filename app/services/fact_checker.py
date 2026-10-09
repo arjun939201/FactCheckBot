@@ -128,8 +128,33 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
             evidence_by_url[url]["relevant"]=bool(
                 evidence_by_url[url].get("relevant") or candidate.get("relevant")
             )
+    # Deduplicate exact/near-identical headlines across different search queries.
+    # Keep the strongest record, while merging question coverage from duplicates.
+    def _headline_key(value):
+        words=re.findall(r"[a-z0-9]+",str(value).lower())
+        stop={"the","a","an","and","or","of","for","to","in","on","at","by","from","with","list","latest","updated"}
+        return " ".join(w for w in words if w not in stop)
+
+    deduped={}
+    for candidate in evidence_by_url.values():
+        title_key=_headline_key(candidate.get("title",""))
+        url_key=re.sub(r"[?#].*$","",str(candidate.get("url","")).rstrip("/")).lower()
+        key=("title",title_key) if len(title_key)>=18 else ("url",url_key)
+        existing=deduped.get(key)
+        if existing is None:
+            deduped[key]=candidate
+            continue
+        matched=list(dict.fromkeys(existing.get("matched_questions",[])+candidate.get("matched_questions",[])))
+        winner=candidate if (
+            candidate.get("source_quality",0),len(str(candidate.get("content",""))),candidate.get("relevance_score",0)
+        ) > (
+            existing.get("source_quality",0),len(str(existing.get("content",""))),existing.get("relevance_score",0)
+        ) else existing
+        winner["matched_questions"]=matched
+        deduped[key]=winner
+
     evidence=sorted(
-        evidence_by_url.values(),
+        deduped.values(),
         key=lambda x:(
             x.get("relevance_score",0),
             x.get("source_quality",0),
@@ -374,7 +399,33 @@ FINAL STAGE: Synthesize the research into the best-supported answer to the user'
     # preserve the strongest retrieved sources deterministically.
     relevant_question_evidence=[x for x in allowed_evidence if x.get("relevant",False)]
     source_pool=(relevant_question_evidence or allowed_evidence) if explicit_question else [x for x in evidence if x["url"] in used]
-    data["sources"]=[{"title":x["title"],"publisher":x["publisher"],"url":x["url"],"source_type":x["source_type"],"source_quality":x["source_quality"],"source_tier":x["source_tier"],"corroboration_count":sum(1 for y in allowed_evidence if y["publisher"]==x["publisher"]),"relevance_score":x.get("relevance_score",0),"relevance_reason":x.get("relevance_reason","")} for x in source_pool[:8]]
+    # Prefer publisher diversity in the visible source list. Multiple URLs
+    # from one publisher should not look like independent corroboration.
+    selected_sources=[]
+    seen_publishers=set()
+    for item in sorted(source_pool,key=lambda x:(x.get("source_quality",0),x.get("relevance_score",0)),reverse=True):
+        publisher=str(item.get("publisher","")).strip().lower()
+        if publisher and publisher in seen_publishers:
+            continue
+        selected_sources.append(item)
+        if publisher:seen_publishers.add(publisher)
+        if len(selected_sources)>=8:break
+    if len(selected_sources)<min(4,len(source_pool)):
+        selected_urls={x.get("url") for x in selected_sources}
+        for item in sorted(source_pool,key=lambda x:(x.get("source_quality",0),x.get("relevance_score",0)),reverse=True):
+            if item.get("url") in selected_urls:continue
+            selected_sources.append(item);selected_urls.add(item.get("url"))
+            if len(selected_sources)>=8:break
+    data["sources"]=[{"title":x["title"],"publisher":x["publisher"],"url":x["url"],"source_type":x["source_type"],"source_quality":x["source_quality"],"source_tier":x["source_tier"],"corroboration_count":len({str(y.get("publisher","")).strip().lower() for y in allowed_evidence if y.get("publisher") and y.get("url")!=x.get("url") and y.get("source_quality",0)>=60}),"relevance_score":x.get("relevance_score",0),"relevance_reason":x.get("relevance_reason","")} for x in selected_sources]
+    # Expose question-level coverage so the UI/API can show which parts of the
+    # investigation were answered, partially answered, or remain unresolved.
+    data["question_coverage"]=[
+        {"question":str(a.get("question","")),
+         "status":str(a.get("status","insufficient")),
+         "answer":str(a.get("answer","")),
+         "evidence_ids":[eid for eid in a.get("evidence_ids",[]) if eid in by_id]}
+        for a in raw_items if isinstance(a,dict) and a.get("question")
+    ][:5]
     data["live_evidence_available"]=bool(evidence)
     if explicit_question and not relevant_question_evidence:
         data["summary"]="Live sources were retrieved, but none were sufficiently relevant to establish the answer to this question."
