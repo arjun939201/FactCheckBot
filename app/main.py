@@ -75,6 +75,7 @@ def script():
     return FileResponse(frontend / "app.js", media_type="application/javascript")
 
 
-@app.get("/share/{id}", include_in_schema=False)
-def share(id: int):
+@app.get("/share/{token}", include_in_schema=False)
+def share(token: str):
+    # The token is resolved by the API; do not route numeric record IDs as public shares.
     return FileResponse(frontend / "share.html")
