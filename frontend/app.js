@@ -73,11 +73,13 @@ function paintAiStatus(){
   const el=$('#aiStatus');if(!el)return;
   const state=aiStatusSnapshot.state||'unknown';
   const remaining=Math.max(0,Number(aiStatusSnapshot.retry_after_seconds||0)-Math.floor((Date.now()-aiStatusUpdatedAt)/1000));
+  const age=aiStatusSnapshot.last_success_ago_seconds;
   el.classList.remove('ai-available','ai-busy','ai-unavailable','ai-unknown');
-  el.classList.add(state==='available'?'ai-available':state==='busy'?'ai-busy':state==='unavailable'?'ai-unavailable':'ai-unknown');
-  const label=state==='available'?'AI available':state==='ready'?'AI ready · untested':state==='busy'?'AI busy':state==='unavailable'?(remaining>0?`AI resetting · ${remaining}s`:'AI unavailable'): 'AI status unknown';
+  const tone=['verified','retry_ready','ready'].includes(state)?'ai-available':state==='busy'?'ai-busy':['rate_limited','unavailable'].includes(state)?'ai-unavailable':'ai-unknown';
+  el.classList.add(tone);
+  const label=state==='verified'?`AI verified · 1 request (${age??0}s ago)`:state==='retry_ready'?'AI retry ready · 1 try':state==='rate_limited'?`AI blocked · ${remaining}s`:state==='stale'?'AI capacity unverified':state==='ready'?'AI untested':state==='busy'?'AI testing request':state==='unavailable'?'AI unavailable':'AI status unknown';
   el.querySelector('span').textContent=label;
-  el.title=state==='available'?(aiStatusSnapshot.detail||'Last request succeeded; availability can change'):state==='ready'?(aiStatusSnapshot.detail||'API key configured; provider not yet verified'):state==='unavailable'?(remaining>0?`Rate limit cooldown. Retry in ${remaining} seconds.`:aiStatusSnapshot.detail||'AI provider unavailable'):aiStatusSnapshot.detail||label;
+  el.title=aiStatusSnapshot.detail||label;
 }
 async function refreshAiStatus(){
   try{
