@@ -171,6 +171,7 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
     for i,item in enumerate(evidence,1):
         item["evidence_id"]=f"E{i:02d}"
     semantic_research = {}
+    update_progress("analyzing")
     try:
         semantic_research = await assess_research_evidence(primary_text, research_questions, evidence)
     except Exception:
