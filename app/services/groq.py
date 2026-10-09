@@ -31,7 +31,7 @@ def get_ai_status() -> dict:
         state, detail = "unavailable", "AI rate limit reached"
     elif _ai_active_requests:
         state, detail = "busy", "AI request in progress"
-    elif _ai_state == "unavailable":
+    elif _ai_state == "unavailable" and _ai_detail == "AI rate limit reached":
         state, detail = "available", "Rate-limit wait ended; next request will confirm availability"
     else:
         state, detail = _ai_state, _ai_detail
