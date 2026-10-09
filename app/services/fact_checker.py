@@ -33,12 +33,12 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
     # Current-time questions are answered from the server clock in the requested
     # timezone; web search snippets often return clock pages without live times.
     current_time_question = bool(re.search(
-        r"\\b(?:what(?:'s| is)?\\s+)?(?:the\\s+)?current\\s+time\\b|"
-        r"\\btime\\s+(?:now|right now)\\b|"
-        r"\\bwhat\\s+time\\s+is\\s+it\\b",
+        r"\b(?:what(?:'s| is)?\s+)?(?:the\s+)?current\s+time\b|"
+        r"\btime\s+(?:now|right now)\b|"
+        r"\bwhat\s+time\s+is\s+it\b",
         primary_text,
         flags=re.I,
-    )) and bool(re.search(r"(?i)\\b(?:india|indian|ist|new delhi|delhi)\\b", primary_text))
+    )) and bool(re.search(r"(?i)\b(?:india|indian|ist|new delhi|delhi)\b", primary_text))
     if current_time_question and not media_contexts and not media_only:
         now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
         answer = f"The current time in India is {now_ist.strftime('%I:%M:%S %p')} IST on {now_ist.strftime('%d %B %Y')}."
