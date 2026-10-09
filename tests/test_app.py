@@ -536,3 +536,12 @@ def test_text_rate_limit_parser_honors_compound_retry_hints():
     assert _retry_delay_from_message("Rate limit. Try again in 1h 20m", 10) == 4800
     assert _retry_delay_from_message("Try again in 2.5s", 10) == 2.5
     assert _retry_delay_from_message("No reset hint", 10) == 10
+
+
+def test_report_renders_answer_before_investigation_process():
+    js = (Path(__file__).resolve().parents[1] / "frontend" / "app.js").read_text()
+    for function_name, next_function in (("function renderResult(d)", "function renderArticle(d)"), ("function renderArticle(d)", "function shareAction(id)")):
+        section = js.split(function_name, 1)[1].split(next_function, 1)[0]
+        answer_pos = section.index('class="answer-panel"')
+        process_pos = section.index("researchCards(d)")
+        assert answer_pos < process_pos
