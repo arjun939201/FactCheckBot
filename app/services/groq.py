@@ -148,27 +148,52 @@ async def _request_impl(model, instruction):
         return r.json()["choices"][0]["message"]["content"]
 
 
-async def _request(model, instruction):
-    global _ai_state, _ai_detail, _ai_active_requests, _ai_reset_at, _ai_last_success_at
+def ai_request_started():
+    global _ai_state, _ai_detail, _ai_active_requests
     _ai_active_requests += 1
     if _ai_reset_at <= time.monotonic():
         _ai_state, _ai_detail = "busy", "AI request in progress"
+
+
+def ai_request_succeeded():
+    global _ai_state, _ai_detail, _ai_last_success_at
+    _ai_last_success_at = time.monotonic()
+    if _ai_reset_at <= time.monotonic():
+        _ai_state, _ai_detail = "available", "Last AI request succeeded"
+
+
+def record_ai_rate_limit(retry_after: float):
+    global _ai_state, _ai_detail, _ai_reset_at
+    _ai_state, _ai_detail = "unavailable", "AI rate limit reached"
+    _ai_reset_at = max(_ai_reset_at, time.monotonic() + max(1.0, float(retry_after)))
+
+
+def ai_request_failed():
+    global _ai_state, _ai_detail
+    if _ai_reset_at <= time.monotonic():
+        _ai_state, _ai_detail = "unavailable", "AI provider request failed"
+
+
+def ai_request_finished():
+    global _ai_active_requests
+    _ai_active_requests = max(0, _ai_active_requests - 1)
+
+
+async def _request(model, instruction):
+    ai_request_started()
     try:
         result = await _request_impl(model, instruction)
-        _ai_last_success_at = time.monotonic()
-        if _ai_reset_at <= time.monotonic():
-            _ai_state, _ai_detail = "available", "Last AI request succeeded"
+        ai_request_succeeded()
         return result
     except GroqRateLimitError as e:
-        _ai_state, _ai_detail = "unavailable", "AI rate limit reached"
-        _ai_reset_at = max(_ai_reset_at, time.monotonic() + e.retry_after)
+        record_ai_rate_limit(e.retry_after)
         raise
     except Exception as e:
-        if isinstance(e, (httpx.HTTPError, GroqProviderError)) and _ai_reset_at <= time.monotonic():
-            _ai_state, _ai_detail = "unavailable", "AI provider request failed"
+        if isinstance(e, (httpx.HTTPError, GroqProviderError)):
+            ai_request_failed()
         raise
     finally:
-        _ai_active_requests = max(0, _ai_active_requests - 1)
+        ai_request_finished()
 
 
 async def groq_json(instruction):
