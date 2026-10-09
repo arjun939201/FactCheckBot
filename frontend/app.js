@@ -35,9 +35,14 @@ function renderRetryNotice(){
   const status=$('#status');
   if(status){
     renderResearchProgress();
+    const limitKind=aiStatusSnapshot.rate_limit_kind||'unknown';
     const message=aiWaitReason==='network'
       ?'Connection interrupted — waiting for the research service to reconnect. This investigation will retry automatically.'
-      :'AI token limit reached — waiting for provider capacity to refill. This investigation will resume automatically.';
+      :limitKind==='tpm'
+        ?'AI token-per-minute limit reached — waiting for provider token capacity. This investigation will resume automatically.'
+        :limitKind==='rpm'
+          ?'AI request-rate limit reached — waiting for the provider cooldown. Available tokens do not remove this limit; research will resume automatically.'
+          :'Provider cooldown active — waiting for its retry window. Token balance alone does not confirm request availability; research will resume automatically.';
     status.insertAdjacentHTML('beforeend',`<p class="mini-meta" role="status">${message}</p>`);
   }
 }
@@ -96,7 +101,7 @@ function renderResearchProgress(completed=false,failed=false){
     const current=progressStages.indexOf(serverResearchStage),done=completed||i<current,active=!completed&&!serverAiWaiting&&i===current;
     const marker=done?'<span class="stage-check">✓</span>':active?'<span class="stage-spinner"></span>':'<span class="stage-empty">◻</span>';
     return '<span class="progress-stage '+(done?'done':active?'active':'pending')+'">'+marker+'<span>'+stage+'</span></span>';
-  }).join('')+(serverAiWaiting?'<span class="progress-stage active ai-waiting"><span class="stage-spinner"></span><span>waiting for AI tokens</span></span>':'')+(failed?'<span class="progress-stage failed"><span class="stage-check">!</span><span>failed</span></span>':'')+'</div>';
+  }).join('')+(serverAiWaiting?'<span class="progress-stage active ai-waiting"><span class="stage-spinner"></span><span>'+esc(aiWaitReason==='network'?'waiting for service':aiStatusSnapshot.rate_limit_kind==='tpm'?'waiting for token refill':aiStatusSnapshot.rate_limit_kind==='rpm'?'waiting for request cooldown':'waiting for provider cooldown')+'</span></span>':'')+(failed?'<span class="progress-stage failed"><span class="stage-check">!</span><span>failed</span></span>':'')+'</div>';
 }
 function startProgressPolling(){
   clearTimeout(progressPollTimer);
