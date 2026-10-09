@@ -62,7 +62,7 @@ for p in sorted(ROOT.rglob("*")):
     if ok:
         raw=value.encode("utf-8")
         included.append({"path":rel,"content":value,"sha256":hashlib.sha256(raw).hexdigest(),
-                         "bytes":len(raw),"lines":len(value.splitlines())+(1 if value.endswith("\n") else 0)})
+                         "bytes":len(raw),"lines":len(value.splitlines())})
     else: excluded.append({"path":rel,"reason":value})
 
 # Numbered tiles are the readable, complete source. Each file remains one intact card.
@@ -107,7 +107,12 @@ for no,group in enumerate(groups,1):
         # Render from exact lines; color heuristic by lexer is applied to whole line to keep layout exact.
         for j,line in enumerate(c["shown"]):
             if j%2: d.rectangle((x+10,yy-1,x+CW-10,yy+LH-1),fill="#131f35")
-            d.text((x+24,yy),line.expandtabs(4),font=font(FS),fill="#dbe6ff")
+            xx=x+24
+            for tok,val in lex(line,lexer):
+                shown=val.expandtabs(4)
+                if shown:
+                    d.text((xx,yy),shown,font=font(FS),fill=color(tok))
+                    xx+=d.textlength(shown,font=font(FS))
             yy+=LH
     fn=f"repository_all_code_{no:02d}.png"; im.save(OUT/fn,optimize=True)
     tiles.append({"file":fn,"dimensions_px":[TW,H],"included_paths":[x["path"] for x in group]})
@@ -136,7 +141,13 @@ for ri,row in enumerate(rows):
         svg.append(f'<text x="{x+12}" y="{y+21}" class="path">{html.escape(c["path"])}</text>')
         yy=y+45
         for line in c["shown"]:
-            svg.append(f'<text x="{x+12}" y="{yy}" class="code">{html.escape(line.expandtabs(4))}</text>'); yy+=MLH
+            try: code_lexer=get_lexer_for_filename(c["path"],stripnl=False,ensurenl=False)
+            except Exception: code_lexer=TextLexer()
+            spans=[]
+            for tok,val in lex(line,code_lexer):
+                if val:
+                    spans.append(f'<tspan fill="{color(tok)}">{html.escape(val.expandtabs(4))}</tspan>')
+            svg.append(f'<text x="{x+12}" y="{yy}" class="code">{"".join(spans)}</text>'); yy+=MLH
     y+=rowh[ri]+12
 svg.append("</svg>")
 (OUT/"repository_all_code.svg").write_text("\n".join(svg),encoding="utf-8")
@@ -155,7 +166,15 @@ if MW*MH<=180_000_000:
             d.text((x+12,y+8),c["path"],font=font(15,True),fill="#8ee6c8")
             yy=y+39
             for line in c["shown"]:
-                d.text((x+12,yy),line.expandtabs(4),font=font(MFS),fill="#dbe6ff"); yy+=MLH
+                try: code_lexer=get_lexer_for_filename(c["path"],stripnl=False,ensurenl=False)
+                except Exception: code_lexer=TextLexer()
+                xx=x+12
+                for tok,val in lex(line,code_lexer):
+                    shown=val.expandtabs(4)
+                    if shown:
+                        d.text((xx,yy),shown,font=font(MFS),fill=color(tok))
+                        xx+=d.textlength(shown,font=font(MFS))
+                yy+=MLH
         y+=rowh[ri]+12
     im.save(OUT/"repository_all_code.png",optimize=True); mode="complete source grid"
 else:
