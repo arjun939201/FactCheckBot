@@ -4,6 +4,7 @@ import httpx
 from PIL import Image
 from fastapi import UploadFile
 from ..config import get_settings
+from .groq import ai_request_started, ai_request_succeeded, ai_request_failed, ai_request_finished, record_ai_rate_limit
 
 logger=logging.getLogger(__name__)
 
@@ -100,7 +101,7 @@ async def _discover_vision_models(force=False):
     _vision_cache=(now,candidates)
     return candidates
 
-async def _call_vision_model(model,data,media_type,prompt):
+async def _call_vision_model_impl(model,data,media_type,prompt):
     s=get_settings()
     max_retries=s.media_vision_retry_attempts
     base_delay=1.0
@@ -139,6 +140,22 @@ async def _call_vision_model(model,data,media_type,prompt):
         if content.startswith(fence): content=content.split("\n",1)[-1].rsplit(fence,1)[0].strip()
         return json.loads(content)
     raise MediaRateLimitError("Groq image analysis is temporarily rate-limited. Please wait and try again.") from last_429
+
+
+async def _call_vision_model(model,data,media_type,prompt):
+    ai_request_started()
+    try:
+        result = await _call_vision_model_impl(model,data,media_type,prompt)
+        ai_request_succeeded()
+        return result
+    except MediaRateLimitError as e:
+        record_ai_rate_limit(e.retry_after or 10.0)
+        raise
+    except (httpx.HTTPError, MediaCapabilityError):
+        ai_request_failed()
+        raise
+    finally:
+        ai_request_finished()
 
 async def _vision(data,media_type,budget:MediaCallBudget|None=None):
     s=get_settings()
