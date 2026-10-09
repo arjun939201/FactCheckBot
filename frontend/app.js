@@ -28,7 +28,23 @@ $('#mediaInput').onchange=()=>addFiles($('#mediaInput').files);
 $('#mediaBox').addEventListener('drop',ev=>addFiles(ev.dataTransfer.files));
 
 async function request(path,options={}){const r=await fetch('/api'+path,options);const d=await r.json().catch(()=>({}));if(!r.ok){const e=new Error(d.detail||`Request failed (${r.status})`);e.status=r.status;throw e}return d}
-function busy(on,label='Investigating…'){$('#systemStatus').classList.toggle('busy',on);$('#systemStatus span').textContent=on?'Research in progress':'System ready';$('#status').innerHTML=on?`<span class="spinner"></span>${esc(label)}`:'';$('#check').disabled=on;$('#analyze').disabled=on}
+let progressTimer=null,statusClearTimer=null,progressIndex=0;
+const progressStages=['Breaking','Researching','Collecting'];
+function busy(on,label='Investigating…',completed=false){
+  clearInterval(progressTimer);clearTimeout(statusClearTimer);
+  $('#systemStatus').classList.toggle('busy',on);
+  $('#systemStatus span').textContent=on?'Research in progress':'System ready';
+  const status=$('#status');
+  if(on){
+    progressIndex=0;
+    const paint=()=>{status.innerHTML=`<span class="spinner"></span><span>${progressStages[progressIndex]}</span>`;progressIndex=(progressIndex+1)%progressStages.length};
+    paint();progressTimer=setInterval(paint,1800);
+  }else if(completed){
+    status.innerHTML='<span class="progress-done" aria-hidden="true">✓</span><span>Completed</span>';
+    statusClearTimer=setTimeout(()=>{status.innerHTML=''},3000);
+  }else status.innerHTML='';
+  $('#check').disabled=on;$('#analyze').disabled=on;
+}
 function paintAiStatus(){
   const el=$('#aiStatus');if(!el)return;
   const state=aiStatusSnapshot.state||'unknown';
@@ -59,9 +75,9 @@ refreshAiStatus();
 
 function renderError(e){const title=e.status===429?'AI rate limit':e.status===503?'Capability temporarily unavailable':'Investigation could not be completed';$('#result').innerHTML=`<div class="warning"><b>${title}</b><p>${esc(e.message)}</p>${e.status===503?'<p class="mini-meta">This does not mean the uploaded file is invalid. The research service is missing a currently available analysis capability.</p>':''}</div>`}
 
-async function submitMedia(){const text=$('#input').value.trim();if(!text){renderError(Object.assign(new Error('Input is required. Attachments are optional.'),{status:400}));return;}busy(true,'Breaking input → researching questions → collecting evidence…');$('#result').innerHTML='';try{const f=new FormData();f.append('text',text);for(const [k,v] of Object.entries(prefs()))f.append(k,v);selectedFiles.forEach(x=>f.append('files',x));const d=await request('/fact-check/media',{method:'POST',body:f});activeResultId=d.id;renderResult(d)}catch(e){renderError(e)}finally{busy(false)}}
+async function submitMedia(){const text=$('#input').value.trim();if(!text){renderError(Object.assign(new Error('Input is required. Attachments are optional.'),{status:400}));return;}busy(true);$('#result').innerHTML='';let completed=false;try{const f=new FormData();f.append('text',text);for(const [k,v] of Object.entries(prefs()))f.append(k,v);selectedFiles.forEach(x=>f.append('files',x));const d=await request('/fact-check/media',{method:'POST',body:f});activeResultId=d.id;renderResult(d);completed=true}catch(e){renderError(e)}finally{busy(false,'',completed)}}
 $('#check').onclick=submitMedia;
-$('#analyze').onclick=async()=>{const url=$('#input').value.trim();if(!url)return;busy(true,'Fetching article → extracting claims → checking evidence…');$('#result').innerHTML='';try{const d=await request('/fact-check/url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,text:url,...prefs()})});activeResultId=d.id;renderArticle(d)}catch(e){renderError(e)}finally{busy(false)}};
+$('#analyze').onclick=async()=>{const url=$('#input').value.trim();if(!url)return;busy(true);$('#result').innerHTML='';let completed=false;try{const d=await request('/fact-check/url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,text:url,...prefs()})});activeResultId=d.id;renderArticle(d);completed=true}catch(e){renderError(e)}finally{busy(false,'',completed)}};
 
 function verdictClass(v){if(['TRUE','MOSTLY TRUE'].includes(v))return'good';if(['FALSE','MOSTLY FALSE'].includes(v))return'bad';return'warn'}
 function evidenceCards(a,contra=false){return(a||[]).map(x=>`<article class="evidence-card ${contra?'contra':''}"><b>${esc(x.title||x.publisher||'Evidence')}</b><div class="mini-meta">${esc(x.publisher)} · ${esc(x.source_tier||x.source_type||'Source')} · quality ${x.source_quality??0}/100${x.relevance_reason?` · ${esc(x.relevance_reason)}`:''}</div><p>${esc(x.excerpt||'No excerpt supplied.')}</p><a href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">Open source ↗</a></article>`).join('')||'<div class="empty">No relevant evidence mapped.</div>'}
