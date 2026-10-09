@@ -60,13 +60,21 @@ def _ddgs_search(query,max_results,backend=None):
     return list(DDGS().text(query,**kwargs))
 
 async def _ddgs(query,max_results):
-    try:return _normalise(await asyncio.to_thread(_ddgs_search,query,max_results))
-    except Exception as e:logger.warning("Primary web search failed: error=%s",type(e).__name__)
+    # Do not let a stalled search provider consume the entire request budget.
+    timeout=max(3.0,float(get_settings().search_timeout))
+    try:
+        raw=await asyncio.wait_for(asyncio.to_thread(_ddgs_search,query,max_results),timeout=timeout)
+        results=_normalise(raw)
+        if results:return results
+    except Exception as e:
+        logger.warning("Primary web search failed: error=%s",type(e).__name__)
     for backend in ("google","bing"):
         try:
-            results=_normalise(await asyncio.to_thread(_ddgs_search,query,max_results,backend))
+            raw=await asyncio.wait_for(asyncio.to_thread(_ddgs_search,query,max_results,backend),timeout=timeout)
+            results=_normalise(raw)
             if results:return results
-        except Exception as e:logger.warning("Fallback web search failed: backend=%s error=%s",backend,type(e).__name__)
+        except Exception as e:
+            logger.warning("Fallback web search failed: backend=%s error=%s",backend,type(e).__name__)
     return []
 
 async def _google_news(query,max_results):
