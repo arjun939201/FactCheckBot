@@ -416,7 +416,7 @@ FINAL STAGE: Synthesize the research into the best-supported answer to the user'
             if item.get("url") in selected_urls:continue
             selected_sources.append(item);selected_urls.add(item.get("url"))
             if len(selected_sources)>=8:break
-    data["sources"]=[{"title":x["title"],"publisher":x["publisher"],"url":x["url"],"source_type":x["source_type"],"source_quality":x["source_quality"],"source_tier":x["source_tier"],"corroboration_count":len({str(y.get("publisher","")).strip().lower() for y in allowed_evidence if y.get("publisher") and y.get("url")!=x.get("url") and y.get("source_quality",0)>=60}),"relevance_score":x.get("relevance_score",0),"relevance_reason":x.get("relevance_reason","")} for x in selected_sources]
+    data["sources"]=[{"title":x["title"],"publisher":x["publisher"],"url":x["url"],"source_type":x["source_type"],"source_quality":x["source_quality"],"source_tier":x["source_tier"],"corroboration_count":len({str(y.get("publisher","")).strip().lower() for y in allowed_evidence if y.get("publisher") and str(y.get("publisher","")).strip().lower()!=str(x.get("publisher","")).strip().lower() and set(y.get("matched_questions",[])) & set(x.get("matched_questions",[])) and y.get("source_quality",0)>=60}),"relevance_score":x.get("relevance_score",0),"relevance_reason":x.get("relevance_reason","")} for x in selected_sources]
     # Expose question-level coverage so the UI/API can show which parts of the
     # investigation were answered, partially answered, or remain unresolved.
     data["question_coverage"]=[
