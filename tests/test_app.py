@@ -571,3 +571,9 @@ def test_report_heading_is_hidden_until_research_completes():
     assert "showResultsHeading();" in result
     assert "showResultsHeading();" in article
 
+def test_hidden_utility_really_hides_report_heading():
+    css = (Path(__file__).resolve().parents[1] / "frontend" / "styles.css").read_text()
+    html = (Path(__file__).resolve().parents[1] / "frontend" / "index.html").read_text()
+    assert ".hidden{display:none!important}" in css
+    assert 'class="results-heading hidden" id="resultsHeading"' in html
+
