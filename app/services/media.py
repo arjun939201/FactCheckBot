@@ -4,7 +4,10 @@ import httpx
 from PIL import Image
 from fastapi import UploadFile
 from ..config import get_settings
-from .groq import ai_request_started, ai_request_succeeded, ai_request_failed, ai_request_finished, record_ai_rate_limit
+from .groq import (
+    ai_request_started, ai_request_succeeded, ai_request_failed, ai_request_finished,
+    record_ai_rate_limit, _capture_rate_headers, _duration_seconds,
+)
 
 logger=logging.getLogger(__name__)
 
@@ -103,11 +106,9 @@ async def _discover_vision_models(force=False):
 
 async def _call_vision_model_impl(model,data,media_type,prompt):
     s=get_settings()
-    max_retries=s.media_vision_retry_attempts
-    base_delay=1.0
-    max_delay=s.media_vision_retry_max_delay
-    last_429=None
-    for attempt in range(max_retries+1):
+    attempt=0
+    from .progress import update_progress
+    while True:
         async with httpx.AsyncClient(timeout=s.request_timeout) as c:
             r=await c.post("https://api.groq.com/openai/v1/chat/completions",
                 headers={"Authorization":"Bearer "+s.groq_api_key,"Content-Type":"application/json"},
@@ -115,23 +116,37 @@ async def _call_vision_model_impl(model,data,media_type,prompt):
                     {"type":"text","text":prompt},
                     {"type":"image_url","image_url":{"url":_data_url(data,media_type)}}
                 ]}]})
+        _capture_rate_headers(r.headers)
         if r.status_code==429:
             retry_header=r.headers.get("Retry-After")
+            requested_delay=_duration_seconds(retry_header)
+            if requested_delay is None:
+                try:
+                    requested_delay=max(0.5,float(retry_header)) if retry_header else min(30.0,2.0**attempt)
+                except ValueError:
+                    requested_delay=min(30.0,2.0**attempt)
             try:
-                requested_delay=float(retry_header) if retry_header else base_delay*(2**attempt)
-            except ValueError:
-                requested_delay=base_delay*(2**attempt)
-            requested_delay=max(0.0,requested_delay)
-            last_429=r
-            logger.warning("Groq vision rate limited: model=%s attempt=%s retry_after=%.2fs",model,attempt+1,requested_delay)
-            record_ai_rate_limit(max(1.0, requested_delay))
-            if attempt < max_retries and requested_delay <= max_delay:
-                await asyncio.sleep(requested_delay)
-                continue
-            raise MediaRateLimitError(
-                "Groq image analysis is temporarily rate-limited. Please wait and try again.",
-                retry_after=requested_delay,
+                body=r.json()
+                error=body.get("error",{}) if isinstance(body,dict) else {}
+                message=str(error.get("message","")) if isinstance(error,dict) else ""
+            except Exception:
+                message=r.text[:1000]
+            kind="tpm" if re.search(r"tokens? per minute|\\bTPM\\b|token rate limit",message,re.I) else "rpm" if re.search(r"requests? per minute|\\bRPM\\b|request rate limit",message,re.I) else "unknown"
+            token_match=re.search(r"requested\\s+(\\d+)\\s+tokens?",message,re.I)
+            required_tokens=int(token_match.group(1)) if token_match else None
+            reset_delay=_duration_seconds(r.headers.get("x-ratelimit-reset-tokens"))
+            if kind=="tpm" and reset_delay is not None:
+                requested_delay=max(requested_delay,reset_delay)
+            requested_delay=max(0.5,requested_delay)
+            record_ai_rate_limit(requested_delay,kind,required_tokens)
+            update_progress("waiting_ai")
+            logger.warning(
+                "Groq vision rate limited; retaining current media stage: model=%s attempt=%s kind=%s retry_in=%.1fs",
+                model,attempt+1,kind,requested_delay,
             )
+            await asyncio.sleep(requested_delay)
+            attempt+=1
+            continue
         if r.status_code==404:
             raise httpx.HTTPStatusError("Groq vision model unavailable",request=r.request,response=r)
         r.raise_for_status()
@@ -139,9 +154,8 @@ async def _call_vision_model_impl(model,data,media_type,prompt):
         content=body["choices"][0]["message"]["content"].strip()
         fence=chr(96)*3
         if content.startswith(fence): content=content.split("\n",1)[-1].rsplit(fence,1)[0].strip()
+        update_progress("resume")
         return json.loads(content)
-    raise MediaRateLimitError("Groq image analysis is temporarily rate-limited. Please wait and try again.") from last_429
-
 
 async def _call_vision_model(model,data,media_type,prompt):
     ai_request_started()
