@@ -9,11 +9,24 @@ class RequestGuard:
         self.hits=defaultdict(deque)
         self.settings=get_settings()
         self.window=60.0
+        self._checks=0
     def allow(self,key,limit):
         now=time.monotonic(); q=self.hits[key]
         while q and now-q[0]>self.window:q.popleft()
-        if len(q)>=limit:return False
-        q.append(now);return True
+        allowed=len(q)<limit
+        if allowed:q.append(now)
+        self._checks+=1
+        # Expired keys from one-off client IPs otherwise accumulate forever.
+        if self._checks%128==0 and len(self.hits)>4096:
+            cutoff=now-self.window
+            for candidate, entries in list(self.hits.items()):
+                while entries and entries[0]<cutoff:entries.popleft()
+                if not entries:self.hits.pop(candidate,None)
+            # Bound memory even during bursts of unique client addresses.
+            if len(self.hits)>8192:
+                for candidate in list(self.hits)[:len(self.hits)-8192]:
+                    self.hits.pop(candidate,None)
+        return allowed
 
 _guard=RequestGuard()
 EXPENSIVE={"/api/fact-check","/api/fact-check/media","/api/fact-check/url","/api/chat"}
