@@ -32,23 +32,18 @@ $('#mediaBox').addEventListener('drop',ev=>addFiles(ev.dataTransfer.files));
 
 async function request(path,options={}){const r=await fetch('/api'+path,options);const d=await r.json().catch(()=>({}));if(!r.ok){const e=new Error(d.detail||`Request failed (${r.status})`);e.status=r.status;e.retryAfter=Number(r.headers.get('Retry-After')||0);throw e}return d}
 let waitingForAiAvailability=false,aiWaitReason='rate-limit';
+function aiWaitMessage(){
+  const limitKind=aiStatusSnapshot.rate_limit_kind||'unknown';
+  if(aiWaitReason==='network')return 'Connection interrupted — waiting for the research service to reconnect. This investigation will retry automatically.';
+  if(limitKind==='tpd')return 'AI daily token quota exhausted — waiting for Groq’s retry window. This investigation will resume automatically.';
+  if(limitKind==='tpm')return 'AI token-per-minute limit reached — waiting for provider token capacity. This investigation will resume automatically.';
+  if(limitKind==='rpm')return 'AI request-rate limit reached — waiting for the provider cooldown. Available tokens do not remove this limit; research will resume automatically.';
+  return 'Provider cooldown active — waiting for its retry window. Token balance alone does not confirm request availability; research will resume automatically.';
+}
 function renderRetryNotice(){
   if(!waitingForAiAvailability||!activeProgressId)return;
-  const status=$('#status');
-  if(status){
-    renderResearchProgress();
-    const limitKind=aiStatusSnapshot.rate_limit_kind||'unknown';
-    const message=aiWaitReason==='network'
-      ?'Connection interrupted — waiting for the research service to reconnect. This investigation will retry automatically.'
-      :limitKind==='tpd'
-        ?'AI daily token quota exhausted — waiting for Groq’s retry window. This investigation will resume automatically.'
-      :limitKind==='tpm'
-        ?'AI token-per-minute limit reached — waiting for provider token capacity. This investigation will resume automatically.'
-        :limitKind==='rpm'
-          ?'AI request-rate limit reached — waiting for the provider cooldown. Available tokens do not remove this limit; research will resume automatically.'
-          :'Provider cooldown active — waiting for its retry window. Token balance alone does not confirm request availability; research will resume automatically.';
-    status.insertAdjacentHTML('beforeend',`<p class="mini-meta" role="status">${message}</p>`);
-  }
+  // Render a single stable notice; repeated polling must not append duplicate messages.
+  renderResearchProgress();
 }
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function waitUntilAiCanRetry(){
@@ -105,7 +100,7 @@ function renderResearchProgress(completed=false,failed=false){
     const current=progressStages.indexOf(serverResearchStage),done=completed||i<current,active=!completed&&!serverAiWaiting&&i===current;
     const marker=done?'<span class="stage-check">✓</span>':active?'<span class="stage-spinner"></span>':'<span class="stage-empty">◻</span>';
     return '<span class="progress-stage '+(done?'done':active?'active':'pending')+'">'+marker+'<span>'+progressStageLabels[stage]+'</span></span>';
-  }).join('')+(serverAiWaiting?'<span class="progress-stage active ai-waiting"><span class="stage-spinner"></span><span>'+esc(aiWaitReason==='network'?'waiting for service':aiStatusSnapshot.rate_limit_kind==='tpd'?'waiting for daily quota reset':aiStatusSnapshot.rate_limit_kind==='tpm'?'waiting for token refill':aiStatusSnapshot.rate_limit_kind==='rpm'?'waiting for request cooldown':'waiting for provider cooldown')+'</span></span>':'')+(failed?'<span class="progress-stage failed"><span class="stage-check">!</span><span>failed</span></span>':'')+'</div>';
+  }).join('')+(serverAiWaiting?'<span class="progress-stage active ai-waiting"><span class="stage-spinner"></span><span>'+esc(aiWaitReason==='network'?'waiting for service':aiStatusSnapshot.rate_limit_kind==='tpd'?'waiting for daily quota reset':aiStatusSnapshot.rate_limit_kind==='tpm'?'waiting for token refill':aiStatusSnapshot.rate_limit_kind==='rpm'?'waiting for request cooldown':'waiting for provider cooldown')+'</span></span>':'')+(waitingForAiAvailability?'<p class="mini-meta ai-wait-notice" role="status">'+esc(aiWaitMessage())+'</p>':'')+(failed?'<span class="progress-stage failed"><span class="stage-check">!</span><span>failed</span></span>':'')+'</div>';
 }
 function startProgressPolling(){
   clearTimeout(progressPollTimer);
