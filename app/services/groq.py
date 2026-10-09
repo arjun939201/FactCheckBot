@@ -175,7 +175,7 @@ def ai_request_succeeded():
 def record_ai_rate_limit(retry_after: float):
     global _ai_state, _ai_detail, _ai_reset_at
     _ai_state, _ai_detail = "unavailable", "AI rate limit reached"
-    _ai_reset_at = max(_ai_reset_at, time.monotonic() + max(1.0, float(retry_after)))
+    _ai_reset_at = time.monotonic() + max(1.0, float(retry_after))
 
 
 def ai_request_failed():
