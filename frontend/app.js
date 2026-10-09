@@ -1,6 +1,7 @@
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 let contextChatHistory=[],contextChatContext={},selectedFiles=[],activeResultId=null;
-const progressStages=['breaking','searching','analyzing','verifying'];
+const progressStages=['breaking','researching','collecting','analyzing'];
+const progressStageLabels={breaking:'breaking down',researching:'searching',collecting:'collecting evidence',analyzing:'analyzing'};
 let activeProgressId=null,progressPollTimer=null,statusClearTimer=null;
 let serverResearchStage='breaking',serverAiWaiting=false;
 let aiStatusSnapshot={state:"unknown",retry_after_seconds:0,detail:"Waiting for status"};
@@ -103,7 +104,7 @@ function renderResearchProgress(completed=false,failed=false){
   status.innerHTML='<div class="research-progress" role="status" aria-live="polite">'+progressStages.map((stage,i)=>{
     const current=progressStages.indexOf(serverResearchStage),done=completed||i<current,active=!completed&&!serverAiWaiting&&i===current;
     const marker=done?'<span class="stage-check">✓</span>':active?'<span class="stage-spinner"></span>':'<span class="stage-empty">◻</span>';
-    return '<span class="progress-stage '+(done?'done':active?'active':'pending')+'">'+marker+'<span>'+stage+'</span></span>';
+    return '<span class="progress-stage '+(done?'done':active?'active':'pending')+'">'+marker+'<span>'+progressStageLabels[stage]+'</span></span>';
   }).join('')+(serverAiWaiting?'<span class="progress-stage active ai-waiting"><span class="stage-spinner"></span><span>'+esc(aiWaitReason==='network'?'waiting for service':aiStatusSnapshot.rate_limit_kind==='tpd'?'waiting for daily quota reset':aiStatusSnapshot.rate_limit_kind==='tpm'?'waiting for token refill':aiStatusSnapshot.rate_limit_kind==='rpm'?'waiting for request cooldown':'waiting for provider cooldown')+'</span></span>':'')+(failed?'<span class="progress-stage failed"><span class="stage-check">!</span><span>failed</span></span>':'')+'</div>';
 }
 function startProgressPolling(){
