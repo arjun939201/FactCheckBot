@@ -124,6 +124,7 @@ async def _call_vision_model_impl(model,data,media_type,prompt):
             requested_delay=max(0.0,requested_delay)
             last_429=r
             logger.warning("Groq vision rate limited: model=%s attempt=%s retry_after=%.2fs",model,attempt+1,requested_delay)
+            record_ai_rate_limit(max(1.0, requested_delay))
             if attempt < max_retries and requested_delay <= max_delay:
                 await asyncio.sleep(requested_delay)
                 continue
