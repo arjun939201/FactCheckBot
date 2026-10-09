@@ -70,9 +70,9 @@ function paintAiStatus(){
   const remaining=Math.max(0,Number(aiStatusSnapshot.retry_after_seconds||0)-Math.floor((Date.now()-aiStatusUpdatedAt)/1000));
   el.classList.remove('ai-available','ai-busy','ai-unavailable','ai-unknown');
   el.classList.add(state==='available'?'ai-available':state==='busy'?'ai-busy':state==='unavailable'?'ai-unavailable':'ai-unknown');
-  const label=state==='available'?'AI available':state==='busy'?'AI busy':state==='unavailable'?(remaining>0?`AI resetting · ${remaining}s`:'AI unavailable'): 'AI status unknown';
+  const label=state==='available'?'AI available':state==='ready'?'AI ready · untested':state==='busy'?'AI busy':state==='unavailable'?(remaining>0?`AI resetting · ${remaining}s`:'AI unavailable'): 'AI status unknown';
   el.querySelector('span').textContent=label;
-  el.title=state==='available'?(aiStatusSnapshot.detail||'Last request succeeded; availability can change'):state==='unavailable'?(remaining>0?`Rate limit cooldown. Retry in ${remaining} seconds.`:aiStatusSnapshot.detail||'AI provider unavailable'):aiStatusSnapshot.detail||label;
+  el.title=state==='available'?(aiStatusSnapshot.detail||'Last request succeeded; availability can change'):state==='ready'?(aiStatusSnapshot.detail||'API key configured; provider not yet verified'):state==='unavailable'?(remaining>0?`Rate limit cooldown. Retry in ${remaining} seconds.`:aiStatusSnapshot.detail||'AI provider unavailable'):aiStatusSnapshot.detail||label;
 }
 async function refreshAiStatus(){
   try{
