@@ -206,7 +206,7 @@ $('#refreshAiStatus')?.addEventListener('click',refreshAiStatus);
 setInterval(refreshAiStatus,3000);
 refreshAiStatus();
 
-function renderError(e){const title=e.status===429?'AI rate limit':e.status===503?'Capability temporarily unavailable':'Investigation could not be completed';$('#result').innerHTML=`<div class="warning"><b>${title}</b><p>${esc(e.message)}</p>${e.status===503?'<p class="mini-meta">This does not mean the uploaded file is invalid. The research service is missing a currently available analysis capability.</p>':''}</div>`}
+function renderError(e){showResultsHeading();const title=e.status===429?'AI rate limit':e.status===503?'Capability temporarily unavailable':'Investigation could not be completed';$('#result').innerHTML=`<div class="warning"><b>${title}</b><p>${esc(e.message)}</p>${e.status===503?'<p class="mini-meta">This does not mean the uploaded file is invalid. The research service is missing a currently available analysis capability.</p>':''}</div>`}
 
 async function submitMedia(){
   const text=$('#input').value.trim(),url=$('#articleUrl').value.trim();
@@ -246,18 +246,14 @@ function resourcePlanCard(d){
 function researchCards(d){
   const qs=d.research_questions||[], rd=d.research_data||[];
   if(!qs.length&&!rd.length)return '';
-  const byQ=new Map(rd.map(x=>[x.question,x]));
   const stages=[
-    ['Input investigated', 'Original question preserved', d.claim||''],
-    ['Researching', qs.length+' targeted research question(s)', qs.join('\\n')],
-    ['Live evidence', (d.sources||[]).length+' source(s) retrieved', (d.sources||[]).map(x=>(x.title||'Source')+' — '+(x.url||'')).join('\\n')],
-    ['Results verifying', rd.length+' question-level finding(s)', rd.map(x=>x.question+'\\n'+x.answer+'\\nEvidence: '+(x.evidence_ids||[]).join(', ')).join('\\n\\n')],
-    ['AI synthesis', 'Answer and uncertainty review', (d.summary||'')+'\\n\\nUncertainty: '+(d.uncertainties||[]).join('; ')]
+    ['Input','Question captured',d.claim||''],
+    ['Research',qs.length+' research question(s)',qs.join('\n')],
+    ['Evidence',(d.sources||[]).length+' source(s) retrieved',(d.sources||[]).map(x=>(x.title||'Source')+' — '+(x.url||'')).join('\n')],
+    ['Verification',rd.length+' finding(s) checked',rd.map(x=>x.question+'\nEvidence: '+(x.evidence_ids||[]).join(', ')).join('\n\n')],
+    ['Synthesis','Answer and uncertainty review',(d.summary||'')+'\n\nUncertainty: '+(d.uncertainties||[]).join('; ')]
   ];
-  return `<section class="result-section research-trace"><h3>AI investigation steps</h3>
-    <div class="process-steps">${stages.map((s,i)=>`<details class="${i===0?'done':''}" ${i===3?'open':''}><summary>${i+1}. ${esc(s[0])}</summary><div class="process-step-data"><p><b>${esc(s[1])}</b></p><p>${esc(s[2]||'No additional data returned for this stage.')}</p></div></details>`).join('')}</div>
-    ${qs.map((q,i)=>{const x=byQ.get(q)||{};return `<article class="research-item"><b>Q${i+1}: ${esc(q)}</b><p>${esc(x.answer||'No sufficient retrieved answer.')}</p>${x.evidence_ids?.length?`<div class="mini-meta">Evidence: ${esc(x.evidence_ids.join(', '))}</div>`:''}<details><summary>View AI research data</summary><div class="research-data-detail">${esc(JSON.stringify(x,null,2))}</div></details></article>`;}).join('')}
-  </section>`;
+  return '<section class="investigation-sheet"><div class="sheet-heading"><div><span class="result-kicker">PROCESS</span><h3>AI investigation</h3></div><span class="mini-meta">'+(qs.length||rd.length)+' finding(s)</span></div><div class="process-steps">'+stages.map((s,i)=>'<details class="process-step '+(i===0?'done':'')+'" '+(i===3?'open':'')+'><summary><span class="step-number">'+(i+1)+'</span><span>'+esc(s[0])+'</span><span class="step-chevron">＋</span></summary><div class="process-step-data"><p><b>'+esc(s[1])+'</b></p><p>'+esc(s[2]||'No additional data returned for this stage.')+'</p></div></details>').join('')+'</div>'+(rd.length?'<details class="all-research-data"><summary>View question-level research data <span>＋</span></summary><div class="research-data-detail">'+esc(JSON.stringify(rd,null,2))+'</div></details>':'')+'</section>';
 }
 function contextChatPanel(d,article=false){
   contextChatHistory=[];
@@ -283,12 +279,20 @@ async function sendContextChat(value){
 }
 $('#result').addEventListener('submit',e=>{if(e.target.id==='contextChatForm'){e.preventDefault();sendContextChat($('#contextChatInput')?.value)}});
 $('#result').addEventListener('click',e=>{const b=e.target.closest('[data-chat-prompt]');if(b)sendContextChat(b.dataset.chatPrompt)});
+function showResultsHeading(){const heading=$('#resultsHeading');if(heading)heading.classList.remove('hidden')}
 function renderResult(d){
-  const uncertainty=d.uncertainties?.length?'<div class="warning"><b>Uncertainty:</b> '+esc(d.uncertainties[0])+'</div>':'';
-  $('#result').innerHTML=reportShell(d)+researchCards(d)+'<div class="result-grid"><div><section class="result-section final-answer"><h3>'+(String(d.content_type||'').toUpperCase()==='QUESTION'?'ANSWER':'Conclusion')+'</h3><p class="summary">'+esc(d.summary||d.reasoning||'No grounded answer was available.')+'</p></section><section class="result-section"><h3>Sources</h3>'+sourceCards(d.sources)+'</section>'+uncertainty+'</div></div>'+contextChatPanel(d)+shareAction(d.id)+'</div>';
+  showResultsHeading();
+  const uncertainty=d.uncertainties?.length?'<div class="warning"><b>Uncertainty</b><p>'+esc(d.uncertainties[0])+'</p></div>':'';
+  const label=String(d.content_type||'').toUpperCase()==='QUESTION'?'ANSWER':'CONCLUSION';
+  $('#result').innerHTML=reportShell(d)+researchCards(d)+'<section class="answer-panel"><div class="answer-label">'+label+'</div><p class="answer-copy">'+esc(d.summary||d.reasoning||'No grounded answer was available.')+'</p></section><section class="report-support"><div class="support-heading"><h3>Sources</h3><span class="mini-meta">'+(d.sources||[]).length+' mapped</span></div>'+sourceCards(d.sources)+uncertainty+'</section>'+contextChatPanel(d)+shareAction(d.id)+'</div>';
+  $('#result').scrollIntoView({behavior:'smooth',block:'start'});
 }
 function renderArticle(d){
-  $('#result').innerHTML=reportShell(d,true)+`<div class="result-grid"><div><section class="result-section"><h3>Bottom line</h3><p class="summary">${esc(d.summary)}</p></section><section class="result-section"><h3>Claims</h3>${claims((d.claims_checked||[]).map(c=>({...c,content_type:'ARTICLE CLAIM',source_quality:0,corroboration_count:0})))}</section></div><aside><section class="result-section"><h3>Sources</h3>${sourceCards(d.sources)}</section>${d.uncertainties?.length?`<div class="warning"><b>Uncertainty</b><ul>${d.uncertainties.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`:''}</aside></div>`+contextChatPanel(d,true)+shareAction(d.id)+`</div>`}
+  showResultsHeading();
+  const uncertainty=d.uncertainties?.length?'<div class="warning"><b>Uncertainty</b><ul>'+d.uncertainties.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></div>':'';
+  $('#result').innerHTML=reportShell(d,true)+researchCards(d)+'<section class="answer-panel"><div class="answer-label">BOTTOM LINE</div><p class="answer-copy">'+esc(d.summary||'No summary available.')+'</p></section><div class="result-grid"><div><section class="result-section"><h3>Claims</h3>'+claims((d.claims_checked||[]).map(c=>({...c,content_type:'ARTICLE CLAIM',source_quality:0,corroboration_count:0})))+'</section></div><aside><section class="result-section"><h3>Sources</h3>'+sourceCards(d.sources)+'</section>'+uncertainty+'</aside></div>'+contextChatPanel(d,true)+shareAction(d.id)+'</div>';
+  $('#result').scrollIntoView({behavior:'smooth',block:'start'});
+}
 function shareAction(id){return `<div class="result-actions"><button class="link-btn share-link" onclick="shareResult(${id})">Copy share link ↗</button></div>`}
 window.shareResult=async id=>{try{const d=await request('/history/'+id+'/share',{method:'POST'});const u=d.path?new URL(d.path,location.origin).href:'';if(!u)throw Error('Share link was not returned');try{await navigator.clipboard.writeText(u);$('#status').textContent='Private result shared by explicit link. Link copied.';setTimeout(()=>$('#status').textContent='',2400)}catch{prompt('Copy public share link',u)}}catch(e){renderError(e)}};
 
