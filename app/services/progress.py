@@ -1,0 +1,27 @@
+from contextvars import ContextVar
+from threading import Lock
+from time import time
+
+_current_id=ContextVar("research_progress_id",default=None)
+_progress={}
+_lock=Lock()
+_STAGE_ORDER={"breaking":0,"researching":1,"collecting":2,"complete":3,"error":3}
+
+def begin_progress(progress_id:str|None):
+    _current_id.set(progress_id)
+    if progress_id:
+        with _lock:
+            _progress[progress_id]={"stage":"breaking","updated_at":time()}
+
+def update_progress(stage:str):
+    progress_id=_current_id.get()
+    if not progress_id:return
+    with _lock:
+        current=_progress.get(progress_id,{})
+        current_stage=current.get("stage","breaking")
+        if _STAGE_ORDER.get(stage,0)>=_STAGE_ORDER.get(current_stage,0):
+            _progress[progress_id]={"stage":stage,"updated_at":time()}
+
+def get_progress(progress_id:str):
+    with _lock:
+        return dict(_progress.get(progress_id,{"stage":"unknown","updated_at":time()}))
