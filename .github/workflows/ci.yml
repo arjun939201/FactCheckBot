@@ -12,6 +12,8 @@ jobs:
         with:
           python-version: "3.13.5"
       - run: pip install -r requirements.txt
+      - name: Prevent committing local database files
+        run: if git ls-files '*.db' | grep -q .; then echo 'Tracked database files are not allowed'; exit 1; fi
       - name: Check frontend JavaScript syntax
         run: node --check frontend/app.js && node --check frontend/share.js
       - name: Run Python tests
