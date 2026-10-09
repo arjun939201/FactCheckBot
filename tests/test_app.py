@@ -440,3 +440,32 @@ def test_share_page_script_is_served():
     response = client.get("/share.js")
     assert response.status_code == 200
     assert "api/share/" in response.text
+
+
+def test_production_settings_reject_ephemeral_database_and_wildcards():
+    from pydantic import ValidationError
+    from app.config import Settings
+
+    with pytest.raises(ValidationError, match="managed PostgreSQL"):
+        Settings(
+            app_env="production",
+            groq_api_key="test-key",
+            database_url="sqlite:///./factcheck.db",
+            cors_origins="*",
+            allowed_hosts="*",
+        )
+
+
+def test_production_settings_accept_explicit_postgres_and_domains():
+    from app.config import Settings
+
+    settings = Settings(
+        app_env="production",
+        groq_api_key="test-key",
+        database_url="postgresql://user:password@localhost:5432/factcheck",
+        cors_origins="https://factcheck.example",
+        allowed_hosts="factcheck.example",
+    )
+    assert settings.database_url.startswith("postgresql://")
+    assert settings.cors_origin_list == ["https://factcheck.example"]
+    assert settings.allowed_host_list == ["factcheck.example"]
