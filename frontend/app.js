@@ -26,21 +26,42 @@ $('#mediaInput').onchange=()=>addFiles($('#mediaInput').files);
 $('#mediaBox').addEventListener('drop',ev=>addFiles(ev.dataTransfer.files));
 
 async function request(path,options={}){const r=await fetch('/api'+path,options);const d=await r.json().catch(()=>({}));if(!r.ok){const e=new Error(d.detail||`Request failed (${r.status})`);e.status=r.status;throw e}return d}
-let progressTimer=null,statusClearTimer=null,progressIndex=0;
-const progressStages=['Breaking','Researching','Collecting'];
+let statusClearTimer=null,progressPollTimer=null,activeProgressId=null,serverResearchStage='breaking';
+const progressStages=['breaking','researching','collecting'];
+function renderResearchProgress(completed=false){
+  const status=$('#status');if(!status)return;
+  status.innerHTML='<div class="research-progress" role="status" aria-live="polite">'+progressStages.map((stage,i)=>{
+    const current=progressStages.indexOf(serverResearchStage),done=completed||i<current,active=!completed&&i===current;
+    const marker=done?'<span class="stage-check">✓</span>':active?'<span class="stage-spinner"></span>':'<span class="stage-empty">◻</span>';
+    return '<span class="progress-stage '+(done?'done':active?'active':'pending')+'">'+marker+'<span>'+stage+'</span></span>';
+  }).join('')+'</div>';
+}
+function startProgressPolling(){
+  clearInterval(progressPollTimer);
+  progressPollTimer=setInterval(async()=>{
+    if(!activeProgressId)return;
+    try{
+      const r=await fetch('/api/research-progress/'+encodeURIComponent(activeProgressId),{cache:'no-store'});
+      if(!r.ok)return;
+      const d=await r.json();
+      if(progressStages.includes(d.stage)){
+        serverResearchStage=d.stage;renderResearchProgress();
+      }
+    }catch{}
+  },450);
+}
 function busy(on,label='Investigating…',completed=false){
-  clearInterval(progressTimer);clearTimeout(statusClearTimer);
+  clearTimeout(statusClearTimer);
   $('#systemStatus').classList.toggle('busy',on);
   $('#systemStatus span').textContent=on?'Research in progress':'System ready';
-  const status=$('#status');
   if(on){
-    progressIndex=0;
-    const paint=()=>{status.innerHTML=`<span class="spinner"></span><span>${progressStages[progressIndex]}</span>`;progressIndex=(progressIndex+1)%progressStages.length};
-    paint();progressTimer=setInterval(paint,1800);
-  }else if(completed){
-    status.innerHTML='<span class="progress-done" aria-hidden="true">✓</span><span>Completed</span>';
-    statusClearTimer=setTimeout(()=>{status.innerHTML=''},3000);
-  }else status.innerHTML='';
+    activeProgressId='rp-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10);
+    serverResearchStage='breaking';renderResearchProgress();startProgressPolling();
+  }else{
+    clearInterval(progressPollTimer);progressPollTimer=null;
+    if(completed){serverResearchStage='collecting';renderResearchProgress(true);statusClearTimer=setTimeout(()=>{$('#status').innerHTML=''},5000)}
+    else{$('#status').innerHTML='';activeProgressId=null}
+  }
   $('#check').disabled=on;
 }
 function paintAiStatus(){
@@ -80,11 +101,11 @@ async function submitMedia(){
   busy(true);$('#result').innerHTML='';let completed=false;
   try{
     if(url){
-      const d=await request('/fact-check/url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,text:url,...prefs()})});
+      const d=await request('/fact-check/url',{method:'POST',headers:{'Content-Type':'application/json','X-Research-ID':activeProgressId},body:JSON.stringify({url,text:url,...prefs()})});
       activeResultId=d.id;renderArticle(d);
     }else{
       const f=new FormData();f.append('text',text);for(const [k,v] of Object.entries(prefs()))f.append(k,v);selectedFiles.forEach(x=>f.append('files',x));
-      const d=await request('/fact-check/media',{method:'POST',body:f});activeResultId=d.id;renderResult(d);
+      const d=await request('/fact-check/media',{method:'POST',headers:{'X-Research-ID':activeProgressId},body:f});activeResultId=d.id;renderResult(d);
     }
     completed=true;
   }catch(e){renderError(e)}finally{busy(false,'',completed)}
