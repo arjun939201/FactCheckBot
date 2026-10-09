@@ -27,22 +27,32 @@ _ai_last_success_at = 0.0
 def get_ai_status() -> dict:
     now = time.monotonic()
     retry_after = max(0, math.ceil(_ai_reset_at - now))
+    last_success_ago = max(0, int(now - _ai_last_success_at)) if _ai_last_success_at else None
+
+    # Report observed request capacity, not a generic claim that the provider is
+    # currently accessible. After a provider cooldown expires, only one retry is
+    # justified; a successful request is required to verify actual capacity.
     if retry_after:
-        state, detail = "unavailable", "AI rate limit reached"
+        state, detail = "rate_limited", "Provider-reported rate-limit wait is still active"
     elif _ai_active_requests:
-        state, detail = "busy", "AI request in progress"
+        state, detail = "busy", "AI request in progress; capacity is being tested"
     elif _ai_state == "unavailable" and _ai_detail == "AI rate limit reached":
-        state, detail = "available", "Rate-limit wait ended; next request will confirm availability"
+        state, detail = "retry_ready", "Cooldown elapsed; one request may be retried, but capacity is not yet verified"
+    elif _ai_state == "available" and last_success_ago is not None and last_success_ago <= 90:
+        state, detail = "verified", "At least one AI request succeeded recently; remaining capacity is not guaranteed"
+    elif _ai_state == "available" and last_success_ago is not None:
+        state, detail = "stale", "A request succeeded earlier, but current capacity has not been verified"
     else:
         state, detail = _ai_state, _ai_detail
+
     return {
         "state": state,
         "detail": detail,
         "retry_after_seconds": retry_after,
         "active_requests": _ai_active_requests,
-        "last_success_ago_seconds": max(0, int(now - _ai_last_success_at)) if _ai_last_success_at else None,
+        "last_success_ago_seconds": last_success_ago,
+        "capacity": "blocked" if retry_after else "one_retry_possible" if state == "retry_ready" else "recent_success" if state == "verified" else "unknown",
     }
-
 
 class GroqProviderError(RuntimeError):
     """A provider-side failure that should not be confused with an app bug."""
