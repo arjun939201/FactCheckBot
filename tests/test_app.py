@@ -279,3 +279,24 @@ def test_share_tokens_are_random_and_owner_authorized(monkeypatch, tmp_path):
     assert store.create_share(item_id,"owner-b") is None
     assert store.get_shared(token)["claim"]=="Private claim"
     assert store.get_shared(str(item_id)) is None
+
+
+@pytest.mark.asyncio
+async def test_request_guard_rejects_malformed_content_length(monkeypatch):
+    import app.middleware as middleware
+
+    settings=type("Settings",(),{"rate_limit_per_minute":20,"max_request_bytes":1024})()
+    monkeypatch.setattr(middleware,"get_settings",lambda:settings)
+    monkeypatch.setattr(middleware._guard,"allow",lambda *args:True)
+
+    class RequestStub:
+        method="POST"
+        url=type("URL",(),{"path":"/api/chat"})()
+        client=type("Client",(),{"host":"127.0.0.1"})()
+        headers={"content-length":"not-a-number"}
+
+    async def next_handler(request):
+        raise AssertionError("invalid request must be rejected before reaching the route")
+
+    response=await middleware.request_guard(RequestStub(),next_handler)
+    assert response.status_code==400
