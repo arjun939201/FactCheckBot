@@ -1,5 +1,7 @@
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 let contextChatHistory=[],contextChatContext={},selectedFiles=[],activeResultId=null;
+let aiStatusSnapshot={state:"unknown",retry_after_seconds:0,detail:"Waiting for status"};
+let aiStatusUpdatedAt=Date.now();
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const prefs=()=>({content_mode:$("#contentMode").value,detail:$("#detail").value,audience:$("#audience").value,source_preference:$("#sourcePref").value,region:$("#region").value,language:$("#language").value});
 
@@ -27,6 +29,34 @@ $('#mediaBox').addEventListener('drop',ev=>addFiles(ev.dataTransfer.files));
 
 async function request(path,options={}){const r=await fetch('/api'+path,options);const d=await r.json().catch(()=>({}));if(!r.ok){const e=new Error(d.detail||`Request failed (${r.status})`);e.status=r.status;throw e}return d}
 function busy(on,label='Investigating…'){$('#systemStatus').classList.toggle('busy',on);$('#systemStatus span').textContent=on?'Research in progress':'System ready';$('#status').innerHTML=on?`<span class="spinner"></span>${esc(label)}`:'';$('#check').disabled=on;$('#analyze').disabled=on}
+function paintAiStatus(){
+  const el=$('#aiStatus');if(!el)return;
+  const state=aiStatusSnapshot.state||'unknown';
+  const remaining=Math.max(0,Number(aiStatusSnapshot.retry_after_seconds||0)-Math.floor((Date.now()-aiStatusUpdatedAt)/1000));
+  el.classList.remove('ai-available','ai-busy','ai-unavailable','ai-unknown');
+  el.classList.add(state==='available'?'ai-available':state==='busy'?'ai-busy':state==='unavailable'?'ai-unavailable':'ai-unknown');
+  const label=state==='available'?'AI available':state==='busy'?'AI busy':state==='unavailable'?(remaining>0?`AI unavailable · ${remaining}s`:'AI unavailable'): 'AI status unknown';
+  el.querySelector('span').textContent=label;
+  el.title=state==='available'?(aiStatusSnapshot.detail||'Last request succeeded; availability can change'):state==='unavailable'?(remaining>0?`Rate limit cooldown. Retry in ${remaining} seconds.`:aiStatusSnapshot.detail||'AI provider unavailable'):aiStatusSnapshot.detail||label;
+}
+async function refreshAiStatus(){
+  try{
+    const r=await fetch('/api/ai-status',{cache:'no-store'});
+    if(!r.ok)throw Error('AI status endpoint unavailable');
+    const d=await r.json();
+    aiStatusSnapshot={...d};
+    aiStatusUpdatedAt=Date.now();
+    paintAiStatus();
+  }catch{
+    aiStatusSnapshot={state:'unknown',retry_after_seconds:0,detail:'Could not refresh AI availability'};
+    aiStatusUpdatedAt=Date.now();
+    paintAiStatus();
+  }
+}
+setInterval(paintAiStatus,1000);
+setInterval(refreshAiStatus,3000);
+refreshAiStatus();
+
 function renderError(e){const title=e.status===429?'AI rate limit':e.status===503?'Capability temporarily unavailable':'Investigation could not be completed';$('#result').innerHTML=`<div class="warning"><b>${title}</b><p>${esc(e.message)}</p>${e.status===503?'<p class="mini-meta">This does not mean the uploaded file is invalid. The research service is missing a currently available analysis capability.</p>':''}</div>`}
 
 async function submitMedia(){const text=$('#input').value.trim();if(!text){renderError(Object.assign(new Error('Input is required. Attachments are optional.'),{status:400}));return;}busy(true,'Breaking input → researching questions → collecting evidence…');$('#result').innerHTML='';try{const f=new FormData();f.append('text',text);for(const [k,v] of Object.entries(prefs()))f.append(k,v);selectedFiles.forEach(x=>f.append('files',x));const d=await request('/fact-check/media',{method:'POST',body:f});activeResultId=d.id;renderResult(d)}catch(e){renderError(e)}finally{busy(false)}}
