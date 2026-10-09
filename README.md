@@ -182,4 +182,4 @@ Groq model availability is account/region dependent and can change. The applicat
 
 ## Verification status
 
-The earlier baseline passed Python compilation and 12 automated tests before the latest audit changes. New regression tests now cover share-token authorization, same-stage vision rate-limit recovery, malformed request-size headers, media-only submissions, and private-address SSRF guards. The latest changes still need a completed CI run and a live Render smoke test; neither should be inferred from a successful GitHub write.
+The earlier baseline passed Python compilation and 12 automated tests before the latest audit changes. New regression tests now cover share-token authorization, text/vision rate-limit recovery state, malformed request-size headers, media-only submissions, private-address rejection, and redirect-to-private-target blocking. The latest changes still need a completed CI run and a live Render smoke test; neither should be inferred from a successful GitHub write.
