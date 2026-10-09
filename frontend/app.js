@@ -282,13 +282,13 @@ function renderResult(d){
   showResultsHeading();
   const uncertainty=d.uncertainties?.length?'<div class="warning"><b>Uncertainty</b><p>'+esc(d.uncertainties[0])+'</p></div>':'';
   const label=String(d.content_type||'').toUpperCase()==='QUESTION'?'ANSWER':'CONCLUSION';
-  $('#result').innerHTML=reportShell(d)+researchCards(d)+'<section class="answer-panel"><div class="answer-label">'+label+'</div><p class="answer-copy">'+esc(d.summary||d.reasoning||'No grounded answer was available.')+'</p></section><section class="report-support"><div class="support-heading"><h3>Sources</h3><span class="mini-meta">'+(d.sources||[]).length+' mapped</span></div>'+sourceCards(d.sources)+uncertainty+'</section>'+contextChatPanel(d)+shareAction(d.id)+'</div>';
+  $('#result').innerHTML=reportShell(d)+'<section class="answer-panel"><div class="answer-label">'+label+'</div><p class="answer-copy">'+esc(d.summary||d.reasoning||'No grounded answer was available.')+'</p></section>'+researchCards(d)+'<section class="report-support"><div class="support-heading"><h3>Sources</h3><span class="mini-meta">'+(d.sources||[]).length+' mapped</span></div>'+sourceCards(d.sources)+uncertainty+'</section>'+contextChatPanel(d)+shareAction(d.id)+'</div>';
   $('#result').scrollIntoView({behavior:'smooth',block:'start'});
 }
 function renderArticle(d){
   showResultsHeading();
   const uncertainty=d.uncertainties?.length?'<div class="warning"><b>Uncertainty</b><ul>'+d.uncertainties.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></div>':'';
-  $('#result').innerHTML=reportShell(d,true)+researchCards(d)+'<section class="answer-panel"><div class="answer-label">BOTTOM LINE</div><p class="answer-copy">'+esc(d.summary||'No summary available.')+'</p></section><div class="result-grid"><div><section class="result-section"><h3>Claims</h3>'+claims((d.claims_checked||[]).map(c=>({...c,content_type:'ARTICLE CLAIM',source_quality:0,corroboration_count:0})))+'</section></div><aside><section class="result-section"><h3>Sources</h3>'+sourceCards(d.sources)+'</section>'+uncertainty+'</aside></div>'+contextChatPanel(d,true)+shareAction(d.id)+'</div>';
+  $('#result').innerHTML=reportShell(d,true)+'<section class="answer-panel"><div class="answer-label">BOTTOM LINE</div><p class="answer-copy">'+esc(d.summary||'No summary available.')+'</p></section>'+researchCards(d)+'<div class="result-grid"><div><section class="result-section"><h3>Claims</h3>'+claims((d.claims_checked||[]).map(c=>({...c,content_type:'ARTICLE CLAIM',source_quality:0,corroboration_count:0})))+'</section></div><aside><section class="result-section"><h3>Sources</h3>'+sourceCards(d.sources)+'</section>'+uncertainty+'</aside></div>'+contextChatPanel(d,true)+shareAction(d.id)+'</div>';
   $('#result').scrollIntoView({behavior:'smooth',block:'start'});
 }
 function shareAction(id){return `<div class="result-actions"><button class="link-btn share-link" onclick="shareResult(${id})">Copy share link ↗</button></div>`}
