@@ -139,6 +139,7 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
     )
     # The search engine returns candidate pages. A bounded semantic pass decides
     # which sources answer the framed questions and builds evidence-linked answers.
+    candidate_count=len(evidence)
     for i,item in enumerate(evidence,1):
         item["evidence_id"]=f"E{i:02d}"
     semantic_research = {}
@@ -157,9 +158,39 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
     elif semantic_research:
         evidence=[]
     if not evidence:
-        if relevance_gap or semantic_research:
-            raise RuntimeError("Search returned pages, but none were sufficiently relevant to answer this input. Try a more specific query or add the key entity, location, or timeframe.")
-        raise RuntimeError("Live search providers returned no usable results. Search may be temporarily unavailable; please retry.")
+        # Evidence gaps are valid research outcomes, not application crashes.
+        if candidate_count and semantic_research:
+            summary="Search retrieved pages, but none directly answered the framed research questions. No conclusion is asserted without relevant evidence."
+            uncertainty="Pages were retrieved, but none passed semantic relevance assessment."
+        elif provider_gap or not candidate_count:
+            summary="Live search did not provide usable evidence. Search providers may be unavailable or timing out; retry the investigation."
+            uncertainty="Search provider failure or timeout prevented evidence collection."
+        else:
+            summary="Available pages did not provide sufficiently relevant evidence to answer this investigation."
+            uncertainty="Insufficient relevant evidence was retrieved."
+        result={
+            "claim":primary_text,"verdict":"UNVERIFIED","confidence":0,
+            "summary":summary,
+            "reasoning":"A reliable conclusion requires relevant, traceable evidence. The research process did not find enough evidence to support one.",
+            "key_points":[],"supporting_evidence":[],"contradicting_evidence":[],
+            "context":"","sources":[],"uncertainties":[uncertainty],
+            "content_type":"QUESTION" if explicit_question else claims[0].get("content_type",prefs.get("content_mode","auto")),
+            "report_title":"Media Fact Check Report" if media_only else "Fact Check Report",
+            "report_sections":[],"attachments":[x.model_dump(mode="json") for x in attachments],
+            "last_checked":datetime.now(timezone.utc).isoformat(),
+            "live_evidence_available":bool(candidate_count),
+            "claims_checked":[] if explicit_question else [{
+                "claim":claims[0].get("claim",primary_text),
+                "content_type":claims[0].get("content_type",prefs.get("content_mode","auto")),
+                "verdict":"UNVERIFIED","confidence":0,"summary":summary,
+                "supporting_evidence_ids":[],"contradicting_evidence_ids":[],
+                "source_quality":0,"corroboration_count":0,
+                "reasoning":"No source passed the evidence relevance gate.",
+                "what_would_change_conclusion":"Relevant primary records or independent sources directly addressing the claim."
+            }],
+            "research_questions":research_questions,"research_data":[],"resource_plan":resource_plan,
+        }
+        return FactCheckResult.model_validate(result)
 
     # Keep the stable IDs assigned before semantic filtering.
     evidence_by_url={item["url"]:item for item in evidence}
