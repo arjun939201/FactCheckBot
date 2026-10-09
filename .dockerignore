@@ -1,0 +1,14 @@
+# Keep local secrets, databases, caches, and development-only files out of the build context.
+.git/
+.github/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.env
+.env.*
+!.env.example
+*.db
+tests/
+*.md
