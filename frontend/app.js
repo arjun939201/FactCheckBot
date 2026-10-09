@@ -1,5 +1,8 @@
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
 let contextChatHistory=[],contextChatContext={},selectedFiles=[],activeResultId=null;
+const progressStages=['breaking','searching','analyzing','verifying'];
+let activeProgressId=null,progressPollTimer=null,statusClearTimer=null;
+let serverResearchStage='breaking',serverAiWaiting=false;
 let aiStatusSnapshot={state:"unknown",retry_after_seconds:0,detail:"Waiting for status"};
 let aiStatusUpdatedAt=Date.now();
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
