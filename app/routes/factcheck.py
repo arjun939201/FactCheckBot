@@ -7,9 +7,14 @@ from ..services.groq import GroqPayloadTooLargeError,GroqProviderError,GroqRateL
 from ..services.search import SearchError
 from ..config import get_settings
 from .history import owner, store
+from ..services.progress import begin_progress, update_progress, get_progress
 
 logger=logging.getLogger(__name__)
 router=APIRouter()
+
+@router.get('/research-progress/{progress_id}')
+def research_progress(progress_id:str):
+    return get_progress(progress_id)
 
 def prefs(r):
     return {"content_mode":r.content_mode,"detail":r.detail,"audience":r.audience,"source_preference":r.source_preference,"region":r.region,"language":r.language}
@@ -22,6 +27,7 @@ async def _save(r,kind,title,owner_key):
 
 @router.post("/fact-check")
 async def fact_check(req:FactCheckRequest, request: Request, response: Response):
+    begin_progress(request.headers.get("X-Research-ID"))
     try:r=await run_fact_check(req.text,prefs(req))
     except GroqPayloadTooLargeError as e:
         raise HTTPException(413,str(e)) from e
@@ -32,6 +38,7 @@ async def fact_check(req:FactCheckRequest, request: Request, response: Response)
     except Exception as e:
         logger.exception("Fact-check failed",extra={"input_length":len(req.text)})
         raise HTTPException(502,"We couldn't complete this fact check right now. Please try again.") from e
+    update_progress("complete")
     i=await _save(r,"claim",r.claim[:120],owner(request,response));return {"id":i,**r.model_dump(mode="json")} 
 
 @router.post("/fact-check/media")
@@ -41,6 +48,7 @@ async def media_fact_check(
     audience:str=Form("general"),source_preference:str=Form("any"),region:str=Form("global"),
     language:str=Form("English"),files:list[UploadFile]=File(default=[]),
 ):
+    begin_progress(request.headers.get("X-Research-ID"))
     if not text.strip(): raise HTTPException(400,"Input is required. Add the claim, question, statement, or text you want researched.")
     if len(files)>5: raise HTTPException(400,"You can attach up to 5 files per fact check.")
     try:
@@ -84,10 +92,12 @@ async def media_fact_check(
     except Exception as e:
         logger.exception("Media fact-check failed",extra={"file_count":len(files),"input_length":len(text)})
         raise HTTPException(502,"We couldn't complete this investigation right now. Please try again.") from e
+    update_progress("complete")
     i=await _save(r,"claim",r.claim[:120],owner(request,response));return {"id":i,**r.model_dump(mode="json")} 
 
 @router.post("/fact-check/url")
 async def url_fact_check(req:URLFactCheckRequest, request: Request, response: Response):
+    begin_progress(request.headers.get("X-Research-ID"))
     try:r=await run_url_fact_check(str(req.url),prefs(req))
     except ValueError as e: raise HTTPException(400,str(e))
     except GroqPayloadTooLargeError as e: raise HTTPException(413,str(e)) from e
@@ -95,6 +105,7 @@ async def url_fact_check(req:URLFactCheckRequest, request: Request, response: Re
     except Exception as e:
         logger.exception("Article fact-check failed",extra={"url_host":req.url.host})
         raise HTTPException(502,"We couldn't complete this article fact check right now. Please try again.") from e
+    update_progress("complete")
     try:i=store.add("article",r.article_title or str(r.article_url),r.overall_verdict.value,r.overall_confidence,r.model_dump(mode="json"),r.last_checked,owner(request,response))
     except Exception as e:
         logger.exception("Article fact-check history save failed")
