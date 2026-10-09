@@ -216,7 +216,9 @@ async def search_web(query:str,max_results:int|None=None,resource_plan:dict|None
         if domain in seen_domains and item["source_quality"]<90:continue
         out.append(item);seen_urls.add(item["url"]);seen_domains.add(domain)
         if len(out)>=min(max_results,15):break
-    counts=Counter(x["publisher"] for x in out)
+    # A repeated publisher across query batches is not independent
+    # corroboration. Each retrieved page starts as one source; claim-level
+    # corroboration must be computed later from distinct relevant publishers.
     for i,x in enumerate(out,1):
-        x["evidence_id"]=f"E{i:02d}";x["corroboration_count"]=counts[x["publisher"]]
+        x["evidence_id"]=f"E{i:02d}";x["corroboration_count"]=1
     return out
