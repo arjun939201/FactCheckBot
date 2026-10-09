@@ -17,7 +17,8 @@ function syncSettings(){for(const id of ['detail','audience','sourcePref','regio
 syncSettings();
 
 $('#advancedToggle').onclick=()=>{const x=$('#advanced'),open=x.classList.toggle('hidden')===false;$('#advancedToggle').setAttribute('aria-expanded',open)};
-$('#input').oninput=e=>$('#charCount').textContent=e.target.value.length;
+function updateCharCount(value){$('#charCount').textContent=value;$('#charCountFooter').textContent=value}
+$('#input').oninput=e=>updateCharCount(e.target.value.length);
 function renderFiles(){
   $('#mediaList').innerHTML=selectedFiles.length?selectedFiles.map((f,i)=>`<span class="file-chip">📎 ${esc(f.name)} · ${Math.max(1,Math.round(f.size/1024))} KB <button type="button" aria-label="Remove ${esc(f.name)}" onclick="removeFile(${i})">×</button></span>`).join(' '):'No media added';
 }
