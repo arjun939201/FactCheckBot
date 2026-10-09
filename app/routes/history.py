@@ -53,7 +53,8 @@ def create_share_link(id: int, request: Request):
     token = store.create_share(id, existing_owner(request))
     if not token:
         raise HTTPException(404, "History item not found")
-    return {"url": str(request.base_url).rstrip("/") + "/share/" + token}
+    # Return a relative path so an untrusted Host header cannot poison copied links.
+    return {"path": "/share/" + token}
 
 
 @router.get("/share/{token}")
