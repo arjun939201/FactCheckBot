@@ -254,8 +254,16 @@ def ai_request_started():
 
 def ai_request_succeeded():
     global _ai_state, _ai_detail, _ai_last_success_at
+    global _ai_reset_at, _ai_rate_limit_kind, _ai_required_tokens_estimate
     _ai_last_success_at = time.monotonic()
-    if _ai_reset_at <= time.monotonic():
+    # A successful retry verifies that the current request can proceed. Clear
+    # stale cooldown state when no other AI request is concurrently active.
+    if _ai_active_requests <= 1:
+        _ai_reset_at = 0.0
+        _ai_rate_limit_kind = "unknown"
+        _ai_required_tokens_estimate = None
+        _ai_state, _ai_detail = "available", "Last AI request succeeded"
+    elif _ai_reset_at <= time.monotonic():
         _ai_state, _ai_detail = "available", "Last AI request succeeded"
 
 
