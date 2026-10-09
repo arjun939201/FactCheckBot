@@ -92,7 +92,7 @@ async function sendContextChat(value){
   contextChatHistory.push({role:'user',content:message});renderChatLog();
   if(send)send.disabled=true;if(input)input.disabled=true;
   const log=$('#contextChatLog');if(log){const wait=document.createElement('div');wait.className='context-chat-message assistant';wait.textContent='Thinking…';wait.id='contextChatWaiting';log.appendChild(wait);log.scrollTop=log.scrollHeight}
-  try{const d=await request('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,history:contextChatHistory.slice(-10),context:contextChatContext})});contextChatHistory.push({role:'assistant',content:d.reply})}
+  try{const d=await request('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,history:contextChatHistory.slice(0,-1).slice(-10),context:contextChatContext})});contextChatHistory.push({role:'assistant',content:d.reply})}
   catch(e){contextChatHistory.push({role:'assistant',content:e.message||'Could not answer right now. Please try again.'})}
   if(send)send.disabled=false;if(input)input.disabled=false;renderChatLog();if(input)input.focus();
 }
