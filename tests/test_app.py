@@ -434,3 +434,9 @@ def test_frontend_html_ids_are_unique():
 def test_frontend_progress_stages_match_backend():
     script = (Path(__file__).resolve().parents[1] / "frontend" / "app.js").read_text(encoding="utf-8")
     assert "const progressStages=['breaking','researching','collecting','analyzing']" in script
+
+
+def test_share_page_script_is_served():
+    response = client.get("/share.js")
+    assert response.status_code == 200
+    assert "api/share/" in response.text
