@@ -469,3 +469,25 @@ def test_production_settings_accept_explicit_postgres_and_domains():
     assert settings.database_url.startswith("postgresql://")
     assert settings.cors_origin_list == ["https://factcheck.example"]
     assert settings.allowed_host_list == ["factcheck.example"]
+
+
+def test_production_settings_reject_embedded_wildcards():
+    from pydantic import ValidationError
+    from app.config import Settings
+
+    with pytest.raises(ValidationError, match="CORS_ORIGINS"):
+        Settings(
+            app_env="production",
+            groq_api_key="test-key",
+            database_url="postgresql://user:password@localhost:5432/factcheck",
+            cors_origins="https://*.example.com",
+            allowed_hosts="example.com",
+        )
+    with pytest.raises(ValidationError, match="ALLOWED_HOSTS"):
+        Settings(
+            app_env="production",
+            groq_api_key="test-key",
+            database_url="postgresql://user:password@localhost:5432/factcheck",
+            cors_origins="https://example.com",
+            allowed_hosts="*.example.com",
+        )
