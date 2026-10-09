@@ -3,6 +3,7 @@ import asyncio
 import re
 import math
 from datetime import datetime,timezone
+from zoneinfo import ZoneInfo
 from pydantic import ValidationError
 from ..models.factcheck import FactCheckResult,ArticleFactCheck,MediaAttachment
 from ..config import get_settings
@@ -29,6 +30,34 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
         ))
 
     primary_text=text.strip()
+    # Current-time questions are answered from the server clock in the requested
+    # timezone; web search snippets often return clock pages without live times.
+    current_time_question = bool(re.search(
+        r"(?i)\\b(?:what(?:'s| is)?\\s+)?(?:the\\s+)?current\\s+time\\b|"
+        r"(?i)\\btime\\s+(?:now|right now)\\b|"
+        r"(?i)\\bwhat\\s+time\\s+is\\s+it\\b",
+        primary_text,
+    )) and bool(re.search(r"(?i)\\b(?:india|indian|ist|new delhi|delhi)\\b", primary_text))
+    if current_time_question and not media_contexts and not media_only:
+        now_ist = datetime.now(ZoneInfo("Asia/Kolkata"))
+        answer = f"The current time in India is {now_ist.strftime('%I:%M:%S %p')} IST on {now_ist.strftime('%d %B %Y')}."
+        update_progress("complete")
+        return FactCheckResult(
+            claim=primary_text,
+            verdict="UNVERIFIED",
+            confidence=100,
+            summary=answer,
+            reasoning="This is a live clock answer calculated from the server's current time in the Asia/Kolkata timezone (UTC+05:30), not inferred from search snippets.",
+            key_points=[answer, "India uses Indian Standard Time (IST), UTC+05:30."],
+            context="Current time is generated dynamically for each request.",
+            uncertainties=["Time reflects the application server clock at request time; no external time-source citation was used."],
+            content_type="QUESTION",
+            report_title="Current Time in India",
+            live_evidence_available=False,
+            research_questions=[primary_text],
+            research_data=[{"question":primary_text,"answer":answer,"evidence_ids":[]}],
+            question_coverage=[{"question":primary_text,"status":"answered","answer":answer,"evidence_ids":[]}],
+        )
     media_only = bool(media_only or not primary_text)
     if media_only:
         primary_text=(
