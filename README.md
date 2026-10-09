@@ -147,7 +147,18 @@ Health endpoint:
 
 `GET /api/health`
 
-For production, set `CORS_ORIGINS` and `ALLOWED_HOSTS` to the actual allowed origins/hosts rather than leaving `*` when a dedicated frontend/domain is available.
+Readiness endpoint (used by Render):
+
+`GET /api/health/readiness`
+
+**Required Render production environment values**
+
+- `GROQ_API_KEY`: valid Groq API key.
+- `DATABASE_URL`: managed PostgreSQL connection URL (`postgresql://...` or `postgres://...`). SQLite is rejected in production because Render's local filesystem is ephemeral.
+- `CORS_ORIGINS`: comma-separated full origins, e.g. `https://fact-check.onrender.com` (include scheme; no trailing slash).
+- `ALLOWED_HOSTS`: comma-separated hostnames only, e.g. `fact-check.onrender.com` (no scheme or path).
+
+Set the actual service hostname and any custom domain in Render's Environment page. Do not use `*` in production. Startup fails early when these production settings are missing or unsafe, instead of deploying with lost history or permissive host settings. The readiness endpoint checks database connectivity and API-key configuration; a failing readiness check should be treated as a deployment/configuration issue, not as a healthy service.
 
 ## API
 
