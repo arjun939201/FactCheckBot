@@ -29,4 +29,8 @@ def ai_status():
     status = get_ai_status()
     if not s.groq_api_key:
         status.update({"state": "unavailable", "detail": "AI API key is not configured", "retry_after_seconds": 0})
+    elif status.get("state") == "unknown":
+        # A fresh worker has no request history yet. Distinguish configured-but-
+        # untested from a broken status endpoint; do not claim provider health.
+        status.update({"state": "ready", "detail": "API key configured; provider not yet verified", "retry_after_seconds": 0})
     return status
