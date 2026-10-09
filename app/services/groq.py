@@ -53,7 +53,7 @@ def _duration_seconds(value: str | None) -> float | None:
 def _retry_delay_from_message(message: str, fallback: float) -> float:
     """Read compound provider hints such as '1h 20m' as well as seconds."""
     match = re.search(
-        r"try again in\\s+([0-9.]+\\s*(?:ms|h|m|s)(?:\\s*[0-9.]+\\s*(?:ms|h|m|s))*)",
+        r"try again in\s+([0-9.]+\s*(?:ms|h|m|s)(?:\s*[0-9.]+\s*(?:ms|h|m|s))*)",
         str(message or ""),
         flags=re.I,
     )
