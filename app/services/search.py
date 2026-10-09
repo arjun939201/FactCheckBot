@@ -22,13 +22,32 @@ def _quality(source_type,publisher,url):
     if "major news" in kind:return (82,"Major news")
     return (60,"Other")
 
+def _canonical_url(value):
+    """Canonicalize tracking variants without discarding meaningful query parameters."""
+    from urllib.parse import parse_qsl, urlencode, urlunparse
+    try:
+        parsed=urlparse(str(value).strip())
+        if parsed.scheme not in {"http","https"} or not parsed.netloc:return ""
+        host=parsed.netloc.lower()
+        if host.startswith("www."):host=host[4:]
+        tracking_prefixes=("utm_",)
+        tracking_names={"gclid","fbclid","mc_cid","mc_eid","ref","ref_src"}
+        params=[
+            (k,v) for k,v in parse_qsl(parsed.query,keep_blank_values=True)
+            if not k.lower().startswith(tracking_prefixes) and k.lower() not in tracking_names
+        ]
+        return urlunparse((parsed.scheme.lower(),host,parsed.path.rstrip("/") or "/", "",urlencode(sorted(params)), ""))
+    except Exception:
+        return str(value).strip().rstrip("/")
+
 def _normalise(results):
     out=[];seen=set()
     for x in results:
         if not isinstance(x,dict):continue
         u=x.get("href") or x.get("url") or ""
-        if urlparse(u).scheme not in {"http","https"} or u in seen:continue
-        seen.add(u);title=str(x.get("title",""))[:300]
+        canonical=_canonical_url(u)
+        if not canonical or canonical in seen:continue
+        seen.add(canonical);title=str(x.get("title",""))[:300]
         publisher=str(x.get("publisher") or urlparse(u).netloc)
         st=source_type_for(title,publisher,u);quality,tier=_quality(st,publisher,u)
         out.append({"title":title,"url":u,"content":str(x.get("body") or x.get("description") or "")[:5000],"publisher":publisher,"source_type":st,"source_quality":quality,"source_tier":tier})
