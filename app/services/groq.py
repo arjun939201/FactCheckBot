@@ -39,7 +39,7 @@ def _duration_seconds(value: str | None) -> float | None:
     except ValueError:
         pass
     total = 0.0
-    matches = list(re.finditer(r"(\\d+(?:\\.\\d+)?)\\s*(ms|h|m|s)", raw))
+    matches = list(re.finditer(r"(\d+(?:\.\d+)?)\s*(ms|h|m|s)", raw))
     if not matches:
         return None
     for match in matches:
@@ -228,8 +228,8 @@ async def _request_impl(model, instruction):
                 match = re.search(r"try again in\s+([0-9.]+)s", message, flags=re.I)
                 if match:
                     retry_after = float(match.group(1))
-                limit_kind = "tpm" if re.search(r"tokens? per minute|\\bTPM\\b|token rate limit", message, flags=re.I) else "rpm" if re.search(r"requests? per minute|\\bRPM\\b|request rate limit", message, flags=re.I) else "unknown"
-                requested_match = re.search(r"requested\\s+(\\d+)\\s+tokens?", message, flags=re.I)
+                limit_kind = "tpm" if re.search(r"tokens? per minute|\bTPM\b|token rate limit", message, flags=re.I) else "rpm" if re.search(r"requests? per minute|\bRPM\b|request rate limit", message, flags=re.I) else "unknown"
+                requested_match = re.search(r"requested\s+(\d+)\s+tokens?", message, flags=re.I)
                 required_tokens = int(requested_match.group(1)) if requested_match else None
                 raise GroqRateLimitError(
                     f"AI analysis is temporarily rate-limited. Please retry in about {max(1, round(retry_after))} seconds.",
