@@ -146,9 +146,10 @@ function paintAiStatus(){
   const refill=Math.max(0,Number(aiStatusSnapshot.token_refill_in_seconds||0)-elapsed);
   const age=aiStatusSnapshot.last_success_ago_seconds;
   el.classList.remove('ai-available','ai-busy','ai-unavailable','ai-unknown');
-  const tone=state==='verified'?'ai-available':state==='busy'?'ai-busy':['rate_limited','unavailable'].includes(state)?'ai-unavailable':'ai-unknown';
+  const tokenCapacityLooksAvailable=Number(aiStatusSnapshot.tokens_remaining)>=7000;
+  const tone=tokenCapacityLooksAvailable?'ai-available':state==='verified'?'ai-available':state==='busy'?'ai-busy':['rate_limited','unavailable'].includes(state)?'ai-unavailable':'ai-unknown';
   el.classList.add(tone);
-  const label=state==='verified'?`AI verified · 1 request (${age??0}s ago)`:state==='retry_ready'?'AI retry ready · 1 try':state==='rate_limited'?`AI blocked · ${remaining}s`:state==='stale'?'AI capacity unverified':state==='ready'?'AI untested':state==='busy'?'AI testing request':state==='unavailable'?'AI unavailable':'AI status unknown';
+  const label=tokenCapacityLooksAvailable&&state==='rate_limited'?`Tokens available · request cooldown ${formatDuration(remaining)}`:state==='verified'?`AI verified · 1 request (${age??0}s ago)`:state==='retry_ready'?'AI retry ready · 1 try':state==='rate_limited'?`AI blocked · ${remaining}s`:state==='stale'?'AI capacity unverified':state==='ready'?'AI untested':state==='busy'?'AI testing request':state==='unavailable'?'AI unavailable':'AI status unknown';
   el.querySelector('span').textContent=label;
   el.title=aiStatusSnapshot.detail||label;
   const panel=$('#aiUsagePanel');
