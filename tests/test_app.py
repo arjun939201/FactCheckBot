@@ -282,9 +282,9 @@ def test_frontend_microcopy_and_upload_ux():
     assert "class=\"claim-attach\"" in html
     assert "removeFile" in js
     assert "dataTransfer.files" in js
-    # Navigation queries must use querySelectorAll helper ($), not querySelector ($).
-    assert "$('.nav-btn,.mobile-tab').forEach" in js
-    assert "$('.view').forEach" in js
+    # Navigation queries must use querySelectorAll helper ($$), not querySelector ($).
+    assert "$$('.nav-btn,.mobile-tab').forEach" in js
+    assert "$$('.view').forEach" in js
 
 
 def test_share_tokens_are_random_and_owner_authorized(monkeypatch, tmp_path):

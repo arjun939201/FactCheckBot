@@ -8,8 +8,8 @@ let aiStatusUpdatedAt=Date.now();
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const prefs=()=>({content_mode:$("#contentMode").value,detail:$("#detail").value,audience:$("#audience").value,source_preference:$("#sourcePref").value,region:$("#region").value,language:$("#language").value});
 
-function setView(name){$('.nav-btn,.mobile-tab').forEach(b=>b.classList.toggle('active',b.dataset.v===name));$('.view').forEach(v=>v.classList.toggle('active',v.id===name));if(name==='history')loadHistory();if(name==='ai-status')refreshAiStatus()}
-$('.nav-btn,.mobile-tab').forEach(b=>b.onclick=()=>{history.replaceState(null,'','#'+b.dataset.v);setView(b.dataset.v)});
+function setView(name){$$('.nav-btn,.mobile-tab').forEach(b=>b.classList.toggle('active',b.dataset.v===name));$$('.view').forEach(v=>v.classList.toggle('active',v.id===name));if(name==='history')loadHistory();if(name==='ai-status')refreshAiStatus()}
+$$('.nav-btn,.mobile-tab').forEach(b=>b.onclick=()=>{history.replaceState(null,'','#'+b.dataset.v);setView(b.dataset.v)});
 window.addEventListener('hashchange',()=>setView(location.hash.slice(1)||'fact'));setView(location.hash.slice(1)||'fact');
 
 function syncSettings(){for(const id of ['detail','audience','sourcePref','region','language']){const k='fc_'+id,v=localStorage.getItem(k);if(v&&$('#'+id))$('#'+id).value=v; if($('#'+id))$('#'+id).onchange=e=>{localStorage.setItem(k,e.target.value);const x=$('#'+id+'2');if(x)x.value=e.target.value}}
