@@ -27,14 +27,14 @@ $('#mediaBox').addEventListener('drop',ev=>addFiles(ev.dataTransfer.files));
 
 async function request(path,options={}){const r=await fetch('/api'+path,options);const d=await r.json().catch(()=>({}));if(!r.ok){const e=new Error(d.detail||`Request failed (${r.status})`);e.status=r.status;throw e}return d}
 let statusClearTimer=null,progressPollTimer=null,activeProgressId=null,serverResearchStage='breaking';
-const progressStages=['breaking','researching','collecting'];
-function renderResearchProgress(completed=false){
+const progressStages=['breaking','researching','collecting','analyzing'];
+function renderResearchProgress(completed=false,failed=false){
   const status=$('#status');if(!status)return;
   status.innerHTML='<div class="research-progress" role="status" aria-live="polite">'+progressStages.map((stage,i)=>{
     const current=progressStages.indexOf(serverResearchStage),done=completed||i<current,active=!completed&&i===current;
     const marker=done?'<span class="stage-check">✓</span>':active?'<span class="stage-spinner"></span>':'<span class="stage-empty">◻</span>';
     return '<span class="progress-stage '+(done?'done':active?'active':'pending')+'">'+marker+'<span>'+stage+'</span></span>';
-  }).join('')+'</div>';
+  }).join('')+(failed?'<span class="progress-stage failed"><span class="stage-check">!</span><span>failed</span></span>':'')+'</div>';
 }
 function startProgressPolling(){
   clearTimeout(progressPollTimer);
@@ -54,7 +54,7 @@ function startProgressPolling(){
   };
   progressPollTimer=setTimeout(poll,0);
 }
-function busy(on,label='Investigating…',completed=false){
+function busy(on,label='Investigating…',completed=false,failed=false){
   clearTimeout(statusClearTimer);
   $('#systemStatus').classList.toggle('busy',on);
   $('#systemStatus span').textContent=on?'Research in progress':'System ready';
@@ -63,7 +63,8 @@ function busy(on,label='Investigating…',completed=false){
     serverResearchStage='breaking';renderResearchProgress();startProgressPolling();
   }else{
     clearTimeout(progressPollTimer);progressPollTimer=null;
-    if(completed){serverResearchStage='collecting';renderResearchProgress(true);statusClearTimer=setTimeout(()=>{$('#status').innerHTML=''},5000)}
+    if(completed){serverResearchStage='analyzing';renderResearchProgress(true);statusClearTimer=setTimeout(()=>{$('#status').innerHTML=''},5000)}
+    else if(failed){serverResearchStage='error';renderResearchProgress(false,true);statusClearTimer=setTimeout(()=>{$('#status').innerHTML=''},5000);activeProgressId=null}
     else{$('#status').innerHTML='';activeProgressId=null}
   }
   $('#check').disabled=on;
@@ -102,7 +103,7 @@ async function submitMedia(){
   const text=$('#input').value.trim(),url=$('#articleUrl').value.trim();
   if(!text&&!url){renderError(Object.assign(new Error('Enter text to research or add an article URL.'),{status:400}));return;}
   if(url&&!/^https?:\/\//i.test(url)){renderError(Object.assign(new Error('Enter a valid URL starting with https:// or http://.'),{status:400}));return;}
-  busy(true);$('#result').innerHTML='';let completed=false;
+  busy(true);$('#result').innerHTML='';let completed=false,failed=false;
   try{
     if(url){
       const d=await request('/fact-check/url',{method:'POST',headers:{'Content-Type':'application/json','X-Research-ID':activeProgressId},body:JSON.stringify({url,text:url,...prefs()})});
@@ -112,7 +113,7 @@ async function submitMedia(){
       const d=await request('/fact-check/media',{method:'POST',headers:{'X-Research-ID':activeProgressId},body:f});activeResultId=d.id;renderResult(d);
     }
     completed=true;
-  }catch(e){renderError(e)}finally{busy(false,'',completed)}
+  }catch(e){failed=true;renderError(e)}finally{busy(false,'',completed,failed)}
 }
 $('#check').onclick=submitMedia;
 function verdictClass(v){if(['TRUE','MOSTLY TRUE'].includes(v))return'good';if(['FALSE','MOSTLY FALSE'].includes(v))return'bad';return'warn'}
