@@ -26,6 +26,8 @@ _ai_token_limit: int | None = None
 _ai_tokens_remaining: int | None = None
 _ai_tokens_reset_at = 0.0
 _ai_last_usage: dict | None = None
+_ai_rate_limit_kind = "unknown"
+_ai_required_tokens_estimate: int | None = None
 
 
 def _duration_seconds(value: str | None) -> float | None:
@@ -85,8 +87,16 @@ def _capture_usage(data: dict) -> None:
 
 def get_ai_status() -> dict:
     now = time.monotonic()
-    retry_after = max(0, math.ceil(_ai_reset_at - now))
     token_refill_in = max(0, math.ceil(_ai_tokens_reset_at - now))
+    token_capacity_known = _ai_tokens_remaining is not None and _ai_required_tokens_estimate is not None
+    token_capacity_sufficient = bool(token_capacity_known and _ai_tokens_remaining >= _ai_required_tokens_estimate)
+    if _ai_rate_limit_kind == "tpm":
+        # For token-per-minute limits, observed token capacity or the provider's
+        # token-window reset controls retry readiness; don't trust a shorter
+        # generic Retry-After countdown.
+        retry_after = 0 if token_capacity_sufficient else token_refill_in
+    else:
+        retry_after = max(0, math.ceil(_ai_reset_at - now))
     last_success_ago = max(0, int(now - _ai_last_success_at)) if _ai_last_success_at else None
 
     # Report observed request capacity, not a generic claim that the provider is
@@ -115,6 +125,9 @@ def get_ai_status() -> dict:
         "token_limit": _ai_token_limit,
         "tokens_remaining": _ai_tokens_remaining,
         "token_refill_in_seconds": token_refill_in,
+        "required_tokens_estimate": _ai_required_tokens_estimate,
+        "token_capacity_sufficient": token_capacity_sufficient,
+        "rate_limit_kind": _ai_rate_limit_kind,
         "last_request_usage": _ai_last_usage,
     }
 
@@ -129,9 +142,11 @@ class GroqPayloadTooLargeError(GroqProviderError):
 class GroqRateLimitError(GroqProviderError):
     """Groq temporarily rejected the request because of a rate limit."""
 
-    def __init__(self, message: str, retry_after: float = 10.0):
+    def __init__(self, message: str, retry_after: float = 10.0, limit_kind: str = "unknown", required_tokens: int | None = None):
         super().__init__(message)
         self.retry_after = max(1.0, float(retry_after))
+        self.limit_kind = limit_kind
+        self.required_tokens = required_tokens
 
 
 def _is_text_generation_model(model: str) -> bool:
@@ -213,9 +228,14 @@ async def _request_impl(model, instruction):
                 match = re.search(r"try again in\s+([0-9.]+)s", message, flags=re.I)
                 if match:
                     retry_after = float(match.group(1))
+                limit_kind = "tpm" if re.search(r"tokens? per minute|\\bTPM\\b|token rate limit", message, flags=re.I) else "rpm" if re.search(r"requests? per minute|\\bRPM\\b|request rate limit", message, flags=re.I) else "unknown"
+                requested_match = re.search(r"requested\\s+(\\d+)\\s+tokens?", message, flags=re.I)
+                required_tokens = int(requested_match.group(1)) if requested_match else None
                 raise GroqRateLimitError(
                     f"AI analysis is temporarily rate-limited. Please retry in about {max(1, round(retry_after))} seconds.",
                     retry_after=retry_after,
+                    limit_kind=limit_kind,
+                    required_tokens=required_tokens,
                 )
             if r.status_code==400 and "reduce the length" in r.text.lower():
                 raise GroqPayloadTooLargeError("Groq rejected the request because the prompt is too large.")
@@ -239,9 +259,12 @@ def ai_request_succeeded():
         _ai_state, _ai_detail = "available", "Last AI request succeeded"
 
 
-def record_ai_rate_limit(retry_after: float):
-    global _ai_state, _ai_detail, _ai_reset_at
+def record_ai_rate_limit(retry_after: float, limit_kind: str = "unknown", required_tokens: int | None = None):
+    global _ai_state, _ai_detail, _ai_reset_at, _ai_rate_limit_kind, _ai_required_tokens_estimate
     _ai_state, _ai_detail = "unavailable", "AI rate limit reached"
+    _ai_rate_limit_kind = limit_kind
+    if required_tokens is not None:
+        _ai_required_tokens_estimate = max(1, int(required_tokens))
     _ai_reset_at = time.monotonic() + max(1.0, float(retry_after))
 
 
@@ -263,7 +286,12 @@ async def _request(model, instruction):
         ai_request_succeeded()
         return result
     except GroqRateLimitError as e:
-        record_ai_rate_limit(e.retry_after)
+        required = e.required_tokens
+        if required is None:
+            # Rough prompt estimate with a conservative completion allowance;
+            # provider usage from the next successful call replaces this estimate.
+            required = math.ceil((len(SYSTEM_PROMPT) + len(instruction)) / 3.5) + 1024
+        record_ai_rate_limit(e.retry_after, e.limit_kind, required)
         raise
     except Exception as e:
         if isinstance(e, (httpx.HTTPError, GroqProviderError)):
