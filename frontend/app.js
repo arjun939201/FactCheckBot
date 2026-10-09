@@ -255,7 +255,7 @@ function researchCards(d){
     ['AI synthesis', 'Answer and uncertainty review', (d.summary||'')+'\\n\\nUncertainty: '+(d.uncertainties||[]).join('; ')]
   ];
   return `<section class="result-section research-trace"><h3>AI investigation steps</h3>
-    <div class="process-steps">${stages.map((s,i)=>`<details class="${i===0?'done':''}"><summary>${i+1}. ${esc(s[0])}</summary><div class="process-step-data"><p><b>${esc(s[1])}</b></p><p>${esc(s[2]||'No additional data returned for this stage.')}</p></div></details>`).join('')}</div>
+    <div class="process-steps">${stages.map((s,i)=>`<details class="${i===0?'done':''}" ${i===3?'open':''}><summary>${i+1}. ${esc(s[0])}</summary><div class="process-step-data"><p><b>${esc(s[1])}</b></p><p>${esc(s[2]||'No additional data returned for this stage.')}</p></div></details>`).join('')}</div>
     ${qs.map((q,i)=>{const x=byQ.get(q)||{};return `<article class="research-item"><b>Q${i+1}: ${esc(q)}</b><p>${esc(x.answer||'No sufficient retrieved answer.')}</p>${x.evidence_ids?.length?`<div class="mini-meta">Evidence: ${esc(x.evidence_ids.join(', '))}</div>`:''}<details><summary>View AI research data</summary><div class="research-data-detail">${esc(JSON.stringify(x,null,2))}</div></details></article>`;}).join('')}
   </section>`;
 }
