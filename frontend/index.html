@@ -19,7 +19,7 @@
       <button data-v="history" class="nav-btn">History</button>
       <button data-v="settings" class="nav-btn">Settings</button>
     </nav>
-    <div class="status-group"><div class="status-pill ai-status ai-unknown" id="aiStatus" role="status" aria-live="polite" title="AI availability is based on the latest provider response"><i></i><span>AI status unknown</span></div><div class="status-pill" id="systemStatus"><i></i><span>System ready</span></div></div>
+    <div class="status-group"><div class="status-pill ai-status ai-unknown" id="aiStatus" role="button" tabindex="0" aria-expanded="false" aria-controls="aiUsagePanel" title="Tap to view token availability and recent usage"><i></i><span>AI status unknown</span></div><div class="status-pill" id="systemStatus"><i></i><span>System ready</span></div><div id="aiUsagePanel" class="ai-usage-panel hidden" aria-live="polite"></div></div>
   </header>
 
   <main>
