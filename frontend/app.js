@@ -1,5 +1,5 @@
 const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
-let chatHistory=[],selectedFiles=[],activeResultId=null;
+let contextChatHistory=[],contextChatContext={},selectedFiles=[],activeResultId=null;
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const prefs=()=>({content_mode:$("#contentMode").value,detail:$("#detail").value,audience:$("#audience").value,source_preference:$("#sourcePref").value,region:$("#region").value,language:$("#language").value});
 
@@ -74,18 +74,36 @@ function researchCards(d){
     }).join('')}
   </section>`;
 }
-function renderResult(d){
-  const verdict=d.verdict||'UNVERIFIED';
-  const uncertainty=d.uncertainties?.length
-    ? '<div class="warning"><b>Uncertainty:</b> '+esc(d.uncertainties[0])+'</div>' : '';
-  $('#result').innerHTML=reportShell(d)+
-    '<div class="result-grid"><div>'+
-      '<section class="result-section final-answer"><h3>'+(String(d.content_type||'').toUpperCase()==='QUESTION'?'ANSWER':'Conclusion')+'</h3><p class="summary">'+esc(d.summary||d.reasoning||'No grounded answer was available.')+'</p></section>'+
-      '<section class="result-section"><h3>Sources</h3>'+sourceCards(d.sources)+'</section>'+
-      uncertainty+
-    '</div></div>'+shareAction(d.id)+'</div>';
+function contextChatPanel(d,article=false){
+  contextChatHistory=[];
+  contextChatContext={type:article?'article':(String(d.content_type||'').toUpperCase()==='QUESTION'?'question':'claim'),input:article?(d.article_title||d.article_url):(d.claim||''),answer:d.summary||'',verdict:article?d.overall_verdict:d.verdict,confidence:article?d.overall_confidence:d.confidence,research_questions:d.research_questions||[],question_coverage:d.question_coverage||[],research_data:d.research_data||[],uncertainties:d.uncertainties||[],sources:(d.sources||[]).slice(0,10).map(x=>({title:x.title,publisher:x.publisher,url:x.url,excerpt:x.excerpt,relevance_reason:x.relevance_reason,source_tier:x.source_tier}))};
+  const suggestions=['Which sources support this answer?','What remains uncertain?','Is there contradictory evidence?'];
+  return `<details class="context-chat"><summary><span><b>Discuss this result</b><small>Ask follow-ups about this answer and its sources</small></span><span class="chat-chevron">＋</span></summary><div class="context-chat-body"><div class="chat-suggestions">${suggestions.map(q=>`<button type="button" class="chat-suggestion" data-chat-prompt="${esc(q)}">${esc(q)}</button>`).join('')}</div><div class="context-chat-log" id="contextChatLog"><p class="context-chat-empty">Ask about the answer, evidence, or uncertainty.</p></div><form class="context-chat-compose" id="contextChatForm"><input id="contextChatInput" maxlength="4000" placeholder="Ask about this result…" aria-label="Ask about this result"><button class="primary" type="submit">Ask ↗</button></form><div class="mini-meta">Uses this report's evidence. It won't pretend to have done new research.</div></div></details>`;
 }
-function renderArticle(d){$('#result').innerHTML=reportShell(d,true)+`<div class="result-grid"><div><section class="result-section"><h3>Bottom line</h3><p class="summary">${esc(d.summary)}</p></section><section class="result-section"><h3>Claims</h3>${claims((d.claims_checked||[]).map(c=>({...c,content_type:'ARTICLE CLAIM',source_quality:0,corroboration_count:0})) )}</section></div><aside><section class="result-section"><h3>Sources</h3>${sourceCards(d.sources)}</section>${d.uncertainties?.length?`<div class="warning"><b>Uncertainty</b><ul>${d.uncertainties.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`:''}</aside></div>`+shareAction(d.id)+`</div>`}
+function renderChatLog(){
+  const log=$('#contextChatLog');if(!log)return;
+  log.innerHTML=contextChatHistory.length?contextChatHistory.map(x=>`<div class="context-chat-message ${x.role==='user'?'user':'assistant'}">${esc(x.content)}</div>`).join(''):'<p class="context-chat-empty">Ask about the answer, evidence, or uncertainty.</p>';
+  log.scrollTop=log.scrollHeight;
+}
+async function sendContextChat(value){
+  const message=String(value||'').trim();if(!message)return;
+  const input=$('#contextChatInput'),send=$('#contextChatForm button[type="submit"]');
+  if(input)input.value='';
+  contextChatHistory.push({role:'user',content:message});renderChatLog();
+  if(send)send.disabled=true;if(input)input.disabled=true;
+  const log=$('#contextChatLog');if(log){const wait=document.createElement('div');wait.className='context-chat-message assistant';wait.textContent='Thinking…';wait.id='contextChatWaiting';log.appendChild(wait);log.scrollTop=log.scrollHeight}
+  try{const d=await request('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,history:contextChatHistory.slice(-10),context:contextChatContext})});contextChatHistory.push({role:'assistant',content:d.reply})}
+  catch(e){contextChatHistory.push({role:'assistant',content:e.message||'Could not answer right now. Please try again.'})}
+  if(send)send.disabled=false;if(input)input.disabled=false;renderChatLog();if(input)input.focus();
+}
+$('#result').addEventListener('submit',e=>{if(e.target.id==='contextChatForm'){e.preventDefault();sendContextChat($('#contextChatInput')?.value)}});
+$('#result').addEventListener('click',e=>{const b=e.target.closest('[data-chat-prompt]');if(b)sendContextChat(b.dataset.chatPrompt)});
+function renderResult(d){
+  const uncertainty=d.uncertainties?.length?'<div class="warning"><b>Uncertainty:</b> '+esc(d.uncertainties[0])+'</div>':'';
+  $('#result').innerHTML=reportShell(d)+'<div class="result-grid"><div><section class="result-section final-answer"><h3>'+(String(d.content_type||'').toUpperCase()==='QUESTION'?'ANSWER':'Conclusion')+'</h3><p class="summary">'+esc(d.summary||d.reasoning||'No grounded answer was available.')+'</p></section><section class="result-section"><h3>Sources</h3>'+sourceCards(d.sources)+'</section>'+uncertainty+'</div></div>'+contextChatPanel(d)+shareAction(d.id)+'</div>';
+}
+function renderArticle(d){
+  $('#result').innerHTML=reportShell(d,true)+`<div class="result-grid"><div><section class="result-section"><h3>Bottom line</h3><p class="summary">${esc(d.summary)}</p></section><section class="result-section"><h3>Claims</h3>${claims((d.claims_checked||[]).map(c=>({...c,content_type:'ARTICLE CLAIM',source_quality:0,corroboration_count:0})))}</section></div><aside><section class="result-section"><h3>Sources</h3>${sourceCards(d.sources)}</section>${d.uncertainties?.length?`<div class="warning"><b>Uncertainty</b><ul>${d.uncertainties.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`:''}</aside></div>`+contextChatPanel(d,true)+shareAction(d.id)+`</div>`}
 function shareAction(id){return `<div class="result-actions"><button class="link-btn share-link" onclick="shareResult(${id})">Copy share link ↗</button></div>`}
 window.shareResult=async id=>{const u=location.origin+'/share/'+id;try{await navigator.clipboard.writeText(u);$('#status').textContent='Share link copied.';setTimeout(()=>$('#status').textContent='',1800)}catch{prompt('Copy share link',u)}};
 
@@ -93,9 +111,5 @@ async function loadHistory(){const q=encodeURIComponent($('#hq').value||'');try{
 window.openHistory=async id=>{try{const d=await request('/history/'+id);activeResultId=id;setView('fact');renderResult(d)}catch(e){renderError(e)}};
 window.deleteHistory=async id=>{if(!confirm('Delete this investigation?'))return;await request('/history/'+id,{method:'DELETE'});loadHistory()};
 $('#hq').oninput=()=>loadHistory();$('#clear').onclick=async()=>{if(confirm('Clear all browser history?')){await request('/history',{method:'DELETE'});loadHistory()}};
-
-function addBubble(role,text){const empty=$('.empty-chat');if(empty)empty.remove();const d=document.createElement('div');d.className='bubble '+role;d.textContent=text;$('#chatLog').appendChild(d);$('#chatLog').scrollTop=$('#chatLog').scrollHeight}
-$('#send').onclick=sendChat;$('#chatInput').onkeydown=e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat()}};
-async function sendChat(){const m=$('#chatInput').value.trim();if(!m)return;addBubble('user',m);$('#chatInput').value='';try{const d=await request('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message:m,history:chatHistory})});chatHistory.push({role:'user',content:m},{role:'assistant',content:d.reply});addBubble('ai',d.reply)}catch(e){addBubble('ai',e.message)}}
 
 (async()=>{try{const h=await fetch('/api/health').then(r=>r.json());$('#version').textContent=`v${esc(h.version||'')}`;if(h.status!=='ok')throw Error()}catch{ $('#systemStatus span').textContent='Service degraded';$('#systemStatus i').style.background='var(--warn)'}})();
