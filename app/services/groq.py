@@ -230,7 +230,7 @@ async def _request_impl(model, instruction):
                 match = re.search(r"try again in\s+([0-9.]+)s", message, flags=re.I)
                 if match:
                     retry_after = float(match.group(1))
-                limit_kind = "tpm" if re.search(r"tokens? per minute|\bTPM\b|token rate limit", message, flags=re.I) else "rpm" if re.search(r"requests? per minute|\bRPM\b|request rate limit", message, flags=re.I) else "unknown"
+                limit_kind = "tpd" if re.search(r"tokens? per day|\bTPD\b|daily token", message, flags=re.I) else "tpm" if re.search(r"tokens? per minute|\bTPM\b|token rate limit", message, flags=re.I) else "rpm" if re.search(r"requests? per minute|\bRPM\b|request rate limit", message, flags=re.I) else "unknown"
                 requested_match = re.search(r"requested\s+(\d+)\s+tokens?", message, flags=re.I)
                 required_tokens = int(requested_match.group(1)) if requested_match else None
                 raise GroqRateLimitError(

@@ -38,6 +38,8 @@ function renderRetryNotice(){
     const limitKind=aiStatusSnapshot.rate_limit_kind||'unknown';
     const message=aiWaitReason==='network'
       ?'Connection interrupted — waiting for the research service to reconnect. This investigation will retry automatically.'
+      :limitKind==='tpd'
+        ?'AI daily token quota exhausted — waiting for Groq’s retry window. This investigation will resume automatically.'
       :limitKind==='tpm'
         ?'AI token-per-minute limit reached — waiting for provider token capacity. This investigation will resume automatically.'
         :limitKind==='rpm'
@@ -101,7 +103,7 @@ function renderResearchProgress(completed=false,failed=false){
     const current=progressStages.indexOf(serverResearchStage),done=completed||i<current,active=!completed&&!serverAiWaiting&&i===current;
     const marker=done?'<span class="stage-check">✓</span>':active?'<span class="stage-spinner"></span>':'<span class="stage-empty">◻</span>';
     return '<span class="progress-stage '+(done?'done':active?'active':'pending')+'">'+marker+'<span>'+stage+'</span></span>';
-  }).join('')+(serverAiWaiting?'<span class="progress-stage active ai-waiting"><span class="stage-spinner"></span><span>'+esc(aiWaitReason==='network'?'waiting for service':aiStatusSnapshot.rate_limit_kind==='tpm'?'waiting for token refill':aiStatusSnapshot.rate_limit_kind==='rpm'?'waiting for request cooldown':'waiting for provider cooldown')+'</span></span>':'')+(failed?'<span class="progress-stage failed"><span class="stage-check">!</span><span>failed</span></span>':'')+'</div>';
+  }).join('')+(serverAiWaiting?'<span class="progress-stage active ai-waiting"><span class="stage-spinner"></span><span>'+esc(aiWaitReason==='network'?'waiting for service':aiStatusSnapshot.rate_limit_kind==='tpd'?'waiting for daily quota reset':aiStatusSnapshot.rate_limit_kind==='tpm'?'waiting for token refill':aiStatusSnapshot.rate_limit_kind==='rpm'?'waiting for request cooldown':'waiting for provider cooldown')+'</span></span>':'')+(failed?'<span class="progress-stage failed"><span class="stage-check">!</span><span>failed</span></span>':'')+'</div>';
 }
 function startProgressPolling(){
   clearTimeout(progressPollTimer);
@@ -149,7 +151,7 @@ function paintAiStatus(){
   const tokenCapacityLooksAvailable=Number(aiStatusSnapshot.tokens_remaining)>=7000;
   const tone=tokenCapacityLooksAvailable?'ai-available':state==='verified'?'ai-available':state==='busy'?'ai-busy':['rate_limited','unavailable'].includes(state)?'ai-unavailable':'ai-unknown';
   el.classList.add(tone);
-  const label=tokenCapacityLooksAvailable&&state==='rate_limited'?`Tokens available · request cooldown ${formatDuration(remaining)}`:state==='verified'?`AI verified · 1 request (${age??0}s ago)`:state==='retry_ready'?'AI retry ready · 1 try':state==='rate_limited'?`AI blocked · ${remaining}s`:state==='stale'?'AI capacity unverified':state==='ready'?'AI untested':state==='busy'?'AI testing request':state==='unavailable'?'AI unavailable':'AI status unknown';
+  const label=state==='rate_limited'&&aiStatusSnapshot.rate_limit_kind==='tpd'?`Daily quota exhausted · ${formatDuration(remaining)}`:tokenCapacityLooksAvailable&&state==='rate_limited'?`Tokens available · request cooldown ${formatDuration(remaining)}`:state==='verified'?`AI verified · 1 request (${age??0}s ago)`:state==='retry_ready'?'AI retry ready · 1 try':state==='rate_limited'?`AI blocked · ${remaining}s`:state==='stale'?'AI capacity unverified':state==='ready'?'AI untested':state==='busy'?'AI testing request':state==='unavailable'?'AI unavailable':'AI status unknown';
   el.querySelector('span').textContent=label;
   el.title=aiStatusSnapshot.detail||label;
   const panel=$('#aiUsagePanel');
@@ -169,7 +171,7 @@ function renderAiDashboard(){
   const retry=Math.max(0,Number(s.retry_after_seconds||0)-elapsed);
   const fmt=n=>n==null?'Not reported':Number(n).toLocaleString();
   const usage=s.last_request_usage;
-  const stateLabels={verified:'Recently verified',retry_ready:'Retry ready · one attempt',rate_limited:'Rate limited',unavailable:'AI unavailable',stale:'Capacity unverified',ready:'Configured · not tested',busy:'Request in progress',unknown:'Status unknown'};
+  const stateLabels={verified:'Recently verified',retry_ready:'Retry ready · one attempt',rate_limited:s.rate_limit_kind==='tpd'?'Daily token quota exhausted':s.rate_limit_kind==='tpm'?'Token-per-minute limited':s.rate_limit_kind==='rpm'?'Request-rate limited':'Rate limited',unavailable:'AI unavailable',stale:'Capacity unverified',ready:'Configured · not tested',busy:'Request in progress',unknown:'Status unknown'};
   const stateLabel=stateLabels[s.state]||s.state||'Status unknown';
   const tokens=s.tokens_remaining==null?'Not reported':fmt(s.tokens_remaining)+(s.token_limit==null?'':' / '+fmt(s.token_limit));
   const refillLabel=refill>0?formatDuration(refill):s.token_refill_in_seconds!=null&&s.tokens_remaining!=null?'Reset window elapsed; awaiting new provider data':'Not reported by provider';
