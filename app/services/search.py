@@ -180,14 +180,23 @@ async def search_web(query:str,max_results:int|None=None,resource_plan:dict|None
     if resource_plan:
         queries=list(dict.fromkeys(queries+_plan_queries(query,resource_plan)))[:4]
 
-    # Bound fan-out because multiple framed questions run concurrently.
-    news_queries=queries[:2]
-    news_batches=await asyncio.gather(*[_google_news(q,max_results) for q in news_queries],return_exceptions=True)
+    # Search several distinct planner-generated queries, not just the original
+    # wording. Otherwise current-status questions often return generic pages with
+    # matching titles but no answer-bearing snippet.
+    provider_queries=list(dict.fromkeys(queries))[:3]
+    news_batches=await asyncio.gather(
+        *[_google_news(q,min(max_results,8)) for q in provider_queries],
+        return_exceptions=True,
+    )
     news_results=[]
     for batch in news_batches:
         if isinstance(batch,list):news_results.extend(batch)
 
-    ddgs_batches=await asyncio.gather(*[_ddgs(queries[0],min(max_results,6))],return_exceptions=True)
+    ddgs_queries=provider_queries[:2]
+    ddgs_batches=await asyncio.gather(
+        *[_ddgs(q,min(max_results,6)) for q in ddgs_queries],
+        return_exceptions=True,
+    )
     ddgs_results=[]
     for batch in ddgs_batches:
         if isinstance(batch,list):ddgs_results.extend(batch)
