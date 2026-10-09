@@ -149,6 +149,63 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
         # Keep the workflow available if the assessor is rate-limited; retain the
         # explicit relevance metadata for the final synthesis to judge cautiously.
         semantic_research = {}
+
+    # Bounded sufficiency gate: if the first evidence pass leaves framed
+    # questions unanswered, run one targeted repair pass for those gaps only.
+    # This avoids both premature "UNVERIFIED" results and unbounded search loops.
+    if isinstance(semantic_research, dict) and research_questions:
+        answers = semantic_research.get("question_answers", [])
+        answered = {
+            " ".join(str(item.get("question", "")).lower().split())
+            for item in answers
+            if isinstance(item, dict)
+            and str(item.get("status", "")).lower() == "answered"
+            and str(item.get("answer", "")).strip()
+            and item.get("evidence_ids")
+        }
+        missing_questions = [
+            q for q in research_questions
+            if " ".join(q.lower().split()) not in answered
+        ][:3]
+        if missing_questions:
+            known_urls = {str(item.get("url", "")) for item in evidence}
+            repair_batches = await asyncio.gather(*[
+                search_web(q, resource_plan=resource_plan)
+                for q in missing_questions
+            ], return_exceptions=True)
+            added = []
+            next_id = len(evidence) + 1
+            for batch in repair_batches:
+                if isinstance(batch, Exception):
+                    if isinstance(batch, SearchError):
+                        provider_gap = True
+                    continue
+                for item in batch:
+                    url = str(item.get("url", ""))
+                    if not url or url in known_urls:
+                        continue
+                    known_urls.add(url)
+                    candidate = dict(item)
+                    candidate["evidence_id"] = f"E{next_id:02d}"
+                    candidate["matched_questions"] = [
+                        q for q in missing_questions
+                        if q in str(candidate.get("title", "")) + " " + str(candidate.get("content", ""))
+                    ]
+                    added.append(candidate)
+                    next_id += 1
+            if added:
+                evidence.extend(added)
+                try:
+                    repaired_research = await assess_research_evidence(
+                        primary_text, research_questions, evidence
+                    )
+                    if isinstance(repaired_research, dict):
+                        semantic_research = repaired_research
+                except Exception:
+                    # Preserve the first assessment if the repair assessment fails.
+                    pass
+
+    candidate_count = len(evidence)
     if semantic_research.get("relevant_evidence_ids"):
         relevant_ids=set(semantic_research["relevant_evidence_ids"])
         evidence=[x for x in evidence if x["evidence_id"] in relevant_ids]
