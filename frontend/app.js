@@ -70,7 +70,7 @@ function renderResearchProgress(completed=false,failed=false){
     const current=progressStages.indexOf(serverResearchStage),done=completed||i<current,active=!completed&&i===current;
     const marker=done?'<span class="stage-check">✓</span>':active?'<span class="stage-spinner"></span>':'<span class="stage-empty">◻</span>';
     return '<span class="progress-stage '+(done?'done':active?'active':'pending')+'">'+marker+'<span>'+stage+'</span></span>';
-  }).join('')+(failed?'<span class="progress-stage failed"><span class="stage-check">!</span><span>failed</span></span>':'')+'</div>';
+  }).join('')+(serverAiWaiting?'<span class="progress-stage active ai-waiting"><span class="stage-spinner"></span><span>waiting for AI tokens</span></span>':'')+(failed?'<span class="progress-stage failed"><span class="stage-check">!</span><span>failed</span></span>':'')+'</div>';
 }
 function startProgressPolling(){
   clearTimeout(progressPollTimer);
@@ -80,8 +80,10 @@ function startProgressPolling(){
       const r=await fetch('/api/research-progress/'+encodeURIComponent(activeProgressId),{cache:'no-store'});
       if(r.ok){
         const d=await r.json();
-        if(progressStages.includes(d.stage)){
-          serverResearchStage=d.stage;renderResearchProgress();
+        if(d.stage==='waiting_ai'){
+          serverAiWaiting=true;serverResearchStage='analyzing';renderResearchProgress();
+        }else if(progressStages.includes(d.stage)){
+          serverAiWaiting=false;serverResearchStage=d.stage;renderResearchProgress();
         }
       }
     }catch{}
@@ -96,7 +98,7 @@ function busy(on,label='Investigating…',completed=false,failed=false){
   $('#systemStatus span').textContent=on?'Research in progress':'System ready';
   if(on){
     activeProgressId='rp-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10);
-    serverResearchStage='breaking';renderResearchProgress();startProgressPolling();
+    serverResearchStage='breaking';serverAiWaiting=false;renderResearchProgress();startProgressPolling();
   }else{
     clearTimeout(progressPollTimer);progressPollTimer=null;
     if(completed){serverResearchStage='analyzing';renderResearchProgress(true);statusClearTimer=setTimeout(()=>{$('#status').innerHTML=''},5000)}
