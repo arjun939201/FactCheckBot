@@ -17,9 +17,19 @@ def update_progress(stage:str):
     progress_id=_current_id.get()
     if not progress_id:return
     with _lock:
-        current=_progress.get(progress_id,{})
+        current=_progress.get(progress_id,{"stage":"breaking"})
         current_stage=current.get("stage","breaking")
-        if _STAGE_ORDER.get(stage,0)>=_STAGE_ORDER.get(current_stage,0):
+        if stage=="waiting_ai":
+            resume_stage=current.get("resume_stage",current_stage)
+            _progress[progress_id]={"stage":"waiting_ai","resume_stage":resume_stage,"updated_at":time()}
+            return
+        if stage=="resume":
+            if current_stage=="waiting_ai":
+                _progress[progress_id]={"stage":current.get("resume_stage","breaking"),"updated_at":time()}
+            return
+        # Leaving a wait is allowed to resume at the correct stage, including
+        # media extraction (which happens before web research starts).
+        if current_stage=="waiting_ai" or _STAGE_ORDER.get(stage,0)>=_STAGE_ORDER.get(current_stage,0):
             _progress[progress_id]={"stage":stage,"updated_at":time()}
 
 def get_progress(progress_id:str):
