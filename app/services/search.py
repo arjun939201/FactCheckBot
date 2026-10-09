@@ -60,21 +60,25 @@ def _ddgs_search(query,max_results,backend=None):
     return list(DDGS().text(query,**kwargs))
 
 async def _ddgs(query,max_results):
-    # Do not let a stalled search provider consume the entire request budget.
+    # DDGS may hang or be throttled on hosted environments. Bound each provider
+    # separately so two failing fallbacks cannot stall the whole investigation.
     timeout=max(3.0,float(get_settings().search_timeout))
-    try:
-        raw=await asyncio.wait_for(asyncio.to_thread(_ddgs_search,query,max_results),timeout=timeout)
-        results=_normalise(raw)
-        if results:return results
-    except Exception as e:
-        logger.warning("Primary web search failed: error=%s",type(e).__name__)
-    for backend in ("google","bing"):
+    attempts=[(None,min(timeout,4.0)),("google",min(timeout,3.0)),("bing",min(timeout,3.0))]
+    failures=[]
+    for backend,limit in attempts:
         try:
-            raw=await asyncio.wait_for(asyncio.to_thread(_ddgs_search,query,max_results,backend),timeout=timeout)
+            raw=await asyncio.wait_for(
+                asyncio.to_thread(_ddgs_search,query,max_results,backend),
+                timeout=limit,
+            )
             results=_normalise(raw)
             if results:return results
         except Exception as e:
-            logger.warning("Fallback web search failed: backend=%s error=%s",backend,type(e).__name__)
+            failures.append((backend or "primary",type(e).__name__))
+            logger.debug("Web search provider failed: backend=%s error=%s",backend or "primary",type(e).__name__)
+    if failures:
+        logger.warning("DDGS search unavailable after %s bounded attempts: %s",
+                       len(failures),", ".join(f"{backend}={error}" for backend,error in failures))
     return []
 
 async def _google_news(query,max_results):
@@ -83,7 +87,7 @@ async def _google_news(query,max_results):
         async with httpx.AsyncClient(timeout=get_settings().search_timeout,follow_redirects=True,headers={"User-Agent":"FactCheck/1.1"}) as client:
             r=await client.get(url);r.raise_for_status()
         root=ET.fromstring(r.text)
-    except Exception as e:logger.warning("Google News RSS failed: error=%s",type(e).__name__);return []
+    except Exception as e:logger.debug("Google News RSS failed: error=%s",type(e).__name__);return []
     results=[]
     for item in root.findall(".//item")[:max_results]:
         source=item.findtext("source") or ""
