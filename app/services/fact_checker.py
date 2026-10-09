@@ -8,6 +8,7 @@ from ..models.factcheck import FactCheckResult,ArticleFactCheck,MediaAttachment
 from ..config import get_settings
 from .groq import groq_json,factcheck_instruction,decompose_claims,plan_resources,assess_research_evidence
 from .search import search_web, SearchError, SearchRelevanceError
+from .progress import update_progress
 
 MAX_MEDIA_CONTEXT=12000
 
@@ -83,12 +84,14 @@ async def run_fact_check(text:str,prefs:dict,media_contexts:list|None=None,media
     resource_plan.setdefault("search_strategy", [])
     resource_plan.setdefault("rationale", "")
     # Search each research question using the selected resource strategy.
+    update_progress('researching')
     search_queries=list(research_questions)
     if explicit_question and primary_text not in search_queries:
         search_queries.insert(0, primary_text)
     batch_results = await asyncio.gather(*[
         search_web(q, resource_plan=resource_plan) for q in search_queries
     ], return_exceptions=True)
+    update_progress('collecting')
     question_batches=[]
     relevance_gap=False
     provider_gap=False
@@ -482,7 +485,9 @@ async def run_url_fact_check(url:str,prefs:dict)->ArticleFactCheck:
     from .article_parser import fetch_article,ArticleFetchError
     try:title,article=await fetch_article(url)
     except ArticleFetchError as e:raise ValueError(str(e)) from e
+    update_progress('researching')
     evidence=await search_web(title+" "+article[:3000])
+    update_progress('collecting')
     if not evidence:raise RuntimeError("Live web evidence retrieval returned no results")
     excerpt_limit=get_settings().groq_evidence_excerpt_chars
     compact_evidence=[{
