@@ -29,6 +29,45 @@ class MediaRateLimitError(RuntimeError):
         super().__init__(message)
         self.retry_after=retry_after
 
+def _rate_limit_details(response, attempt:int=0)->tuple[float,str,int|None]:
+    """Extract the provider's best retry hint without hammering a daily quota."""
+    headers=response.headers
+    try:
+        body=response.json()
+        error=body.get("error",{}) if isinstance(body,dict) else {}
+        message=str(error.get("message","")) if isinstance(error,dict) else ""
+    except Exception:
+        message=str(getattr(response,"text",""))[:1000]
+
+    if re.search(r"tokens? per day|\\bTPD\\b|daily token",message,re.I):
+        kind="tpd"
+    elif re.search(r"tokens? per minute|\\bTPM\\b|token rate limit",message,re.I):
+        kind="tpm"
+    elif re.search(r"requests? per minute|\\bRPM\\b|request rate limit",message,re.I):
+        kind="rpm"
+    else:
+        kind="unknown"
+
+    delay=_duration_seconds(headers.get("Retry-After"))
+    if delay is None:
+        try:
+            delay=max(0.0,float(headers["Retry-After"])) if headers.get("Retry-After") else None
+        except (TypeError,ValueError):
+            delay=None
+    hint=re.search(r"try again in\\s+([0-9.]+\\s*(?:ms|h|m|s)(?:\\s*[0-9.]+\\s*(?:ms|h|m|s))*)",message,re.I)
+    if hint:
+        parsed=_duration_seconds(hint.group(1))
+        if parsed is not None:
+            delay=parsed
+    reset=_duration_seconds(headers.get("x-ratelimit-reset-tokens"))
+    if kind in {"tpm","tpd"} and reset is not None:
+        delay=max(delay or 0.0,reset)
+    if delay is None:
+        delay=min(300.0,60.0*(2**attempt)) if kind=="tpd" else min(30.0,2.0**attempt)
+    required_match=re.search(r"requested\\s+(\\d+)\\s+tokens?",message,re.I)
+    required=int(required_match.group(1)) if required_match else None
+    return max(0.5,delay),kind,required
+
 @dataclass
 class MediaCallBudget:
     remaining:int|None=None
@@ -118,26 +157,7 @@ async def _call_vision_model_impl(model,data,media_type,prompt):
                 ]}]})
         _capture_rate_headers(r.headers)
         if r.status_code==429:
-            retry_header=r.headers.get("Retry-After")
-            requested_delay=_duration_seconds(retry_header)
-            if requested_delay is None:
-                try:
-                    requested_delay=max(0.5,float(retry_header)) if retry_header else min(30.0,2.0**attempt)
-                except ValueError:
-                    requested_delay=min(30.0,2.0**attempt)
-            try:
-                body=r.json()
-                error=body.get("error",{}) if isinstance(body,dict) else {}
-                message=str(error.get("message","")) if isinstance(error,dict) else ""
-            except Exception:
-                message=r.text[:1000]
-            kind="tpm" if re.search(r"tokens? per minute|\bTPM\b|token rate limit",message,re.I) else "rpm" if re.search(r"requests? per minute|\bRPM\b|request rate limit",message,re.I) else "unknown"
-            token_match=re.search(r"requested\s+(\d+)\s+tokens?",message,re.I)
-            required_tokens=int(token_match.group(1)) if token_match else None
-            reset_delay=_duration_seconds(r.headers.get("x-ratelimit-reset-tokens"))
-            if kind=="tpm" and reset_delay is not None:
-                requested_delay=max(requested_delay,reset_delay)
-            requested_delay=max(0.5,requested_delay)
+            requested_delay,kind,required_tokens=_rate_limit_details(r,attempt)
             record_ai_rate_limit(requested_delay,kind,required_tokens)
             update_progress("waiting_ai")
             logger.warning(
@@ -219,13 +239,37 @@ Do not infer identity, intent, authenticity, location, date, or events unless di
 async def _transcribe(data,filename,media_type):
     s=get_settings()
     if not s.groq_api_key: raise RuntimeError("Groq API is not configured")
-    async with httpx.AsyncClient(timeout=max(s.request_timeout,60)) as c:
-        r=await c.post("https://api.groq.com/openai/v1/audio/transcriptions",
-          headers={"Authorization":"Bearer "+s.groq_api_key},
-          files={"file":(filename,data,media_type)},
-          data={"model":s.groq_transcription_model,"response_format":"text"})
-        r.raise_for_status()
-        return r.text.strip()
+    attempt=0
+    from .progress import update_progress
+    ai_request_started()
+    try:
+        while True:
+            async with httpx.AsyncClient(timeout=max(s.request_timeout,60)) as c:
+                r=await c.post("https://api.groq.com/openai/v1/audio/transcriptions",
+                  headers={"Authorization":"Bearer "+s.groq_api_key},
+                  files={"file":(filename,data,media_type)},
+                  data={"model":s.groq_transcription_model,"response_format":"text"})
+            _capture_rate_headers(r.headers)
+            if r.status_code==429:
+                delay,kind,required_tokens=_rate_limit_details(r,attempt)
+                record_ai_rate_limit(delay,kind,required_tokens)
+                update_progress("waiting_ai")
+                logger.warning(
+                    "Groq transcription rate limited; retaining current media stage: kind=%s attempt=%s retry_in=%.1fs",
+                    kind,attempt+1,delay,
+                )
+                await asyncio.sleep(delay)
+                attempt+=1
+                continue
+            r.raise_for_status()
+            ai_request_succeeded()
+            update_progress("analyzing")
+            return r.text.strip()
+    except Exception:
+        ai_request_failed()
+        raise
+    finally:
+        ai_request_finished()
 
 def _ffmpeg(): return __import__("imageio_ffmpeg").get_ffmpeg_exe()
 
