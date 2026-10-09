@@ -107,15 +107,22 @@ async def test_run_fact_check_normalizes_string_evidence(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_vision_429_retries_then_raises_rate_limit(monkeypatch):
+async def test_vision_429_waits_and_retries_same_stage(monkeypatch):
     import app.services.media as media
 
     class FakeResponse:
-        status_code=429
-        headers={"Retry-After":"0"}
-        request=object()
+        def __init__(self, status_code):
+            self.status_code=status_code
+            self.headers={"Retry-After":"0"}
+            self.request=object()
+            self.text=""
+        def json(self):
+            if self.status_code==429:
+                return {"error":{"message":"TPM rate limit: requested 100 tokens"}}
+            return {"choices":[{"message":{"content":'{"visible_text":"ok","visual_summary":"clear","claims_or_context":[],"uncertainties":[]}'}}]}
         def raise_for_status(self):
-            raise AssertionError("429 response should be handled before raise_for_status")
+            if self.status_code>=400:
+                raise AssertionError("successful response expected")
 
     class FakeClient:
         calls=0
@@ -123,15 +130,15 @@ async def test_vision_429_retries_then_raises_rate_limit(monkeypatch):
         async def __aexit__(self,*args): pass
         async def post(self,*args,**kwargs):
             self.calls+=1
-            return FakeResponse()
+            return FakeResponse(429 if self.calls<3 else 200)
 
     fake=FakeClient()
     monkeypatch.setattr(media.httpx,"AsyncClient",lambda *a,**k: fake)
     monkeypatch.setattr(media,"get_settings",lambda: type("S",(),{"groq_api_key":"test-key","request_timeout":1.0,"media_vision_retry_attempts":2,"media_vision_retry_max_delay":6.0,"media_vision_calls_per_request":6})())
     async def no_sleep(delay): pass
     monkeypatch.setattr(media.asyncio,"sleep",no_sleep)
-    with pytest.raises(media.MediaRateLimitError):
-        await media._call_vision_model("vision-model",b"x","image/jpeg","{}")
+    result=await media._call_vision_model("vision-model",b"x","image/jpeg","{}")
+    assert result["visible_text"]=="ok"
     assert fake.calls==3
 
 
@@ -253,3 +260,22 @@ def test_frontend_microcopy_and_upload_ux():
     assert "Claim + media" in html
     assert "removeFile" in js
     assert "dataTransfer.files" in js
+
+
+def test_share_tokens_are_random_and_owner_authorized(monkeypatch, tmp_path):
+    from app.services import history as history_service
+
+    settings=type("Settings",(),{
+        "database_url":f"sqlite:///{tmp_path / 'history.db'}",
+        "max_history_items":20,
+    })()
+    monkeypatch.setattr(history_service,"get_settings",lambda:settings)
+    store=history_service.HistoryStore()
+    item_id=store.add("claim","Private claim","UNVERIFIED",0,{"claim":"Private claim"},"now","owner-a")
+
+    token=store.create_share(item_id,"owner-a")
+    assert token and len(token)>=40
+    assert store.create_share(item_id,"owner-a")==token
+    assert store.create_share(item_id,"owner-b") is None
+    assert store.get_shared(token)["claim"]=="Private claim"
+    assert store.get_shared(str(item_id)) is None
