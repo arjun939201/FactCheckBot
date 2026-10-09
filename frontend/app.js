@@ -8,7 +8,7 @@ let aiStatusUpdatedAt=Date.now();
 const esc=x=>String(x??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const prefs=()=>({content_mode:$("#contentMode").value,detail:$("#detail").value,audience:$("#audience").value,source_preference:$("#sourcePref").value,region:$("#region").value,language:$("#language").value});
 
-function setView(name){$$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.v===name));$$('.view').forEach(v=>v.classList.toggle('active',v.id===name));if(name==='history')loadHistory()}
+function setView(name){$('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.v===name));$('.view').forEach(v=>v.classList.toggle('active',v.id===name));if(name==='history')loadHistory();if(name==='ai-status')refreshAiStatus()}
 $$('.nav-btn').forEach(b=>b.onclick=()=>{history.replaceState(null,'','#'+b.dataset.v);setView(b.dataset.v)});
 window.addEventListener('hashchange',()=>setView(location.hash.slice(1)||'fact'));setView(location.hash.slice(1)||'fact');
 
@@ -131,6 +131,25 @@ function paintAiStatus(){
     const usageText=usage?.total_tokens!=null?`<strong>${fmt(usage.total_tokens)} tokens</strong><div class="mini-meta">Input ${fmt(usage.prompt_tokens)} + output ${fmt(usage.completion_tokens)} · last successful AI call</div>`:'<span class="mini-meta">No usage data returned yet</span>';
     panel.innerHTML=`<div class="ai-usage-title">AI token usage</div><div class="ai-usage-row"><span>Token availability</span><strong>${available==null?'Not reported':fmt(available)+' remaining'}${limit==null?'':' / '+fmt(limit)}</strong></div><div class="ai-usage-row"><span>Token-window reset</span><strong>${refillText}</strong></div><div class="ai-usage-row usage-total"><span>Last AI call used</span><div>${usageText}</div></div><div class="mini-meta">Provider-reported limits; last AI call is not the total for the full investigation.</div>`;
   }
+  renderAiDashboard();
+}
+function renderAiDashboard(){
+  const root=$('#aiStatusDashboard');if(!root)return;
+  const s=aiStatusSnapshot,elapsed=Math.floor((Date.now()-aiStatusUpdatedAt)/1000);
+  const refill=Math.max(0,Number(s.token_refill_in_seconds||0)-elapsed);
+  const retry=Math.max(0,Number(s.retry_after_seconds||0)-elapsed);
+  const fmt=n=>n==null?'Not reported':Number(n).toLocaleString();
+  const usage=s.last_request_usage;
+  const stateLabels={verified:'Recently verified',retry_ready:'Retry ready · one attempt',rate_limited:'Rate limited',unavailable:'AI unavailable',stale:'Capacity unverified',ready:'Configured · not tested',busy:'Request in progress',unknown:'Status unknown'};
+  const stateLabel=stateLabels[s.state]||s.state||'Status unknown';
+  const tokens=s.tokens_remaining==null?'Not reported':fmt(s.tokens_remaining)+(s.token_limit==null?'':' / '+fmt(s.token_limit));
+  const refillLabel=refill>0?formatDuration(refill):s.token_refill_in_seconds!=null&&s.tokens_remaining!=null?'Reset window elapsed; awaiting new provider data':'Not reported by provider';
+  const lastAge=usage?.recorded_at?formatDuration(Math.max(0,Math.floor(Date.now()/1000-usage.recorded_at)))+' ago':'No successful AI call recorded';
+  const callSummary=usage?.total_tokens!=null
+    ?`Last successful call used ${fmt(usage.total_tokens)} tokens in ${usage.duration_seconds==null?'an unreported duration':formatDuration(usage.duration_seconds)}`
+    :'Token usage is not available until a successful AI response includes usage data.';
+  root.innerHTML=`<div class="ai-metric card"><div class="ai-metric-label">AI state</div><div class="ai-metric-value"><span class="ai-state-dot ${['verified','retry_ready','ready'].includes(s.state)?'good':['rate_limited','unavailable'].includes(s.state)?'bad':s.state==='busy'?'warn':''}"></span>${esc(stateLabel)}</div><div class="mini-meta">${esc(s.detail||'No status details')}</div></div><div class="ai-metric card"><div class="ai-metric-label">Tokens remaining</div><div class="ai-metric-value">${esc(tokens)}</div><div class="mini-meta">Current provider-reported token capacity</div></div><div class="ai-metric card"><div class="ai-metric-label">Token refill</div><div class="ai-metric-value">${esc(refillLabel)}</div><div class="mini-meta">${retry>0?'Retry wait: '+formatDuration(retry):s.token_capacity_sufficient===true?'Estimated request fits reported capacity':'Retry timing may not guarantee availability'}</div></div><div class="ai-metric card ai-metric-wide"><div class="ai-metric-label">Recent AI request</div><div class="ai-metric-value">${esc(callSummary)}</div><div class="ai-usage-breakdown">${usage?.total_tokens!=null?'Input '+fmt(usage.prompt_tokens)+' + output '+fmt(usage.completion_tokens)+' tokens · ':''}${esc(lastAge)}</div><div class="mini-meta">This is the last successful provider call, not a guaranteed total for the full investigation.</div></div>`;
+  const updated=$('#aiDashUpdated');if(updated)updated.textContent='Updated '+new Date(aiStatusUpdatedAt).toLocaleTimeString();
 }
 function formatDuration(seconds){const n=Math.max(0,Math.ceil(Number(seconds)||0));return n<60?n+'s':Math.floor(n/60)+'m '+(n%60)+'s'}
 function toggleAiUsage(){const panel=$('#aiUsagePanel'),button=$('#aiStatus');if(!panel||!button)return;const open=panel.classList.toggle('hidden')===false;button.setAttribute('aria-expanded',String(open))}
@@ -151,6 +170,7 @@ async function refreshAiStatus(){
   }
 }
 setInterval(paintAiStatus,1000);
+$('#refreshAiStatus')?.addEventListener('click',refreshAiStatus);
 
 setInterval(refreshAiStatus,3000);
 refreshAiStatus();

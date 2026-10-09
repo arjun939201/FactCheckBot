@@ -66,7 +66,7 @@ def _capture_rate_headers(headers) -> None:
         logger.debug("Could not parse provider token rate-limit headers", exc_info=True)
 
 
-def _capture_usage(data: dict) -> None:
+def _capture_usage(data: dict, duration_seconds: float | None = None) -> None:
     global _ai_last_usage
     usage = data.get("usage") if isinstance(data, dict) else None
     if not isinstance(usage, dict):
@@ -81,6 +81,7 @@ def _capture_usage(data: dict) -> None:
             "prompt_tokens": prompt if isinstance(prompt, (int, float)) else None,
             "completion_tokens": completion if isinstance(completion, (int, float)) else None,
             "total_tokens": total if isinstance(total, (int, float)) else None,
+            "duration_seconds": round(duration_seconds, 2) if duration_seconds is not None else None,
             "recorded_at": time.time(),
         }
 
@@ -204,6 +205,7 @@ def _clip_instruction(instruction: str) -> str:
 async def _request_impl(model, instruction):
     s=get_settings()
     instruction=_clip_instruction(instruction)
+    request_started_at = time.monotonic()
     async with httpx.AsyncClient(timeout=s.request_timeout) as c:
         r=await c.post(
             "https://api.groq.com/openai/v1/chat/completions",
@@ -241,7 +243,7 @@ async def _request_impl(model, instruction):
                 raise GroqPayloadTooLargeError("Groq rejected the request because the prompt is too large.")
             r.raise_for_status()
         data = r.json()
-        _capture_usage(data)
+        _capture_usage(data, time.monotonic() - request_started_at)
         return data["choices"][0]["message"]["content"]
 
 

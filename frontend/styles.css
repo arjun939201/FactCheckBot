@@ -59,3 +59,18 @@
 .ai-usage-row>strong,.ai-usage-row>div{text-align:right;overflow-wrap:anywhere}
 .ai-usage-row .mini-meta{margin-top:3px}
 .ai-usage-panel>.mini-meta{margin-top:9px;line-height:1.45}
+
+
+/* Dedicated AI Status view */
+.ai-dashboard-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:0 0 14px}
+.ai-dashboard{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.ai-metric{padding:22px;min-width:0}
+.ai-metric-label{font-size:10px;text-transform:uppercase;letter-spacing:.12em;color:var(--muted);font-weight:900}
+.ai-metric-value{display:flex;align-items:center;gap:9px;font-size:clamp(17px,2vw,25px);font-weight:900;letter-spacing:-.03em;margin:12px 0 8px;overflow-wrap:anywhere}
+.ai-state-dot{display:inline-block;flex:0 0 9px;width:9px;height:9px;border-radius:50%;background:#89919a}
+.ai-state-dot.good{background:var(--good)}.ai-state-dot.bad{background:var(--bad)}.ai-state-dot.warn{background:var(--warn);animation:pulse 1s infinite}
+.ai-metric-wide{grid-column:1/-1}
+.ai-usage-breakdown{font-size:13px;color:var(--muted);margin:7px 0 12px}
+.ai-status-note{margin-top:16px}
+@media(max-width:850px){.status-group .ai-status{display:flex}.ai-dashboard{grid-template-columns:1fr 1fr}.ai-metric-wide{grid-column:1/-1}}
+@media(max-width:560px){.ai-dashboard{grid-template-columns:1fr}.ai-metric-wide{grid-column:auto}.ai-dashboard-toolbar{align-items:flex-start}.ai-metric{padding:18px}.ai-metric-value{font-size:21px}}

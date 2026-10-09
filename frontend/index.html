@@ -6,7 +6,7 @@
   <meta name="description" content="Fact Check — evidence-first claim verification with live web research.">
   <title>Fact Check — Follow the evidence</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="stylesheet" href="/styles.css?v=1431501">
+  <link rel="stylesheet" href="/styles.css?v=ai-status-20261009">
 </head>
 <body>
 <div class="shell">
@@ -18,6 +18,7 @@
       <button data-v="fact" class="nav-btn active">Research</button>
       <button data-v="history" class="nav-btn">History</button>
       <button data-v="settings" class="nav-btn">Settings</button>
+      <button data-v="ai-status" class="nav-btn">AI Status</button>
     </nav>
     <div class="status-group"><div class="status-pill ai-status ai-unknown" id="aiStatus" role="button" tabindex="0" aria-expanded="false" aria-controls="aiUsagePanel" title="Tap to view token availability and recent usage"><i></i><span>AI status unknown</span></div><div class="status-pill" id="systemStatus"><i></i><span>System ready</span></div><div id="aiUsagePanel" class="ai-usage-panel hidden" aria-live="polite"></div></div>
   </header>
@@ -76,9 +77,16 @@
         <div class="card setting-card"><h3>Language</h3><label>Language<select id="language2"><option>English</option><option>Hindi</option><option>Telugu</option></select></label><div class="info-note">The research engine prioritizes retrieved evidence over model memory.</div></div>
       </div>
     </section>
+
+    <section id="ai-status" class="view">
+      <div class="page-head"><div class="eyebrow">PROVIDER TELEMETRY</div><h2>AI status.</h2><p>Live provider-reported capacity and the most recent successful AI call. Limits can change between requests.</p></div>
+      <div class="ai-dashboard-toolbar"><span id="aiDashUpdated" class="mini-meta">Waiting for provider status…</span><button id="refreshAiStatus" class="secondary">Refresh status</button></div>
+      <div id="aiStatusDashboard" class="ai-dashboard" aria-live="polite"></div>
+      <div class="info-note ai-status-note">Token counts and refill timing appear only when the provider returns rate-limit headers. Usage reflects the latest successful AI call, not necessarily the entire investigation. Status is process-local and may reset when the service restarts.</div>
+    </section>
   </main>
   <footer><span>Fact Check</span><span>Evidence over confidence.</span><span id="version"></span></footer>
 </div>
-<script src="/app.js?v=75ea5714"></script>
+<script src="/app.js?v=ai-status-20261009"></script>
 </body>
 </html>
