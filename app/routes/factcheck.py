@@ -107,8 +107,15 @@ async def media_fact_check(
 async def url_fact_check(req:URLFactCheckRequest, request: Request, response: Response):
     begin_progress(request.headers.get("X-Research-ID"))
     try:r=await run_url_fact_check(str(req.url),prefs(req))
-    except ValueError as e: raise HTTPException(400,str(e))
-    except GroqPayloadTooLargeError as e: raise HTTPException(413,str(e)) from e
+    except ValueError as e:
+        update_progress("error")
+        raise HTTPException(400,str(e)) from e
+    except GroqPayloadTooLargeError as e:
+        update_progress("error")
+        raise HTTPException(413,str(e)) from e
+    except GroqRateLimitError as e:
+        update_progress("error")
+        raise HTTPException(429,str(e),headers={"Retry-After":str(max(1,int(e.retry_after)))}) from e
     except GroqProviderError as e:
         update_progress("error")
         raise HTTPException(503,str(e)) from e
