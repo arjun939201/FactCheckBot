@@ -53,7 +53,8 @@ async def media_fact_check(
     language:str=Form("English"),files:list[UploadFile]=File(default=[]),
 ):
     begin_progress(request.headers.get("X-Research-ID"))
-    if not text.strip(): raise HTTPException(400,"Input is required. Add the claim, question, statement, or text you want researched.")
+    if not text.strip() and not files:
+        raise HTTPException(400,"Input is required. Add text or attach at least one file.")
     if len(files)>5: raise HTTPException(400,"You can attach up to 5 files per fact check.")
     try:
         budget=MediaCallBudget(get_settings().media_vision_calls_per_request)
