@@ -339,3 +339,13 @@ def test_successful_ai_retry_clears_stale_rate_limit(monkeypatch):
     assert groq._ai_reset_at==0
     assert groq._ai_rate_limit_kind=="unknown"
     assert groq._ai_required_tokens_estimate is None
+
+
+def test_article_fetcher_rejects_private_and_non_http_targets():
+    from app.services.article_parser import _public_http_url
+
+    assert not _public_http_url("http://127.0.0.1/")
+    assert not _public_http_url("http://169.254.169.254/latest/meta-data/")
+    assert not _public_http_url("http://localhost/")
+    assert not _public_http_url("ftp://example.com/")
+    assert not _public_http_url("http://example.com:8080/")
