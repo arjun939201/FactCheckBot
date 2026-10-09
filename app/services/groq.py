@@ -94,7 +94,7 @@ def get_ai_status() -> dict:
         # For token-per-minute limits, observed token capacity or the provider's
         # token-window reset controls retry readiness; don't trust a shorter
         # generic Retry-After countdown.
-        retry_after = 0 if token_capacity_sufficient else token_refill_in
+        retry_after = 0 if token_capacity_sufficient else (token_refill_in if token_refill_in > 0 else max(0, math.ceil(_ai_reset_at - now)))
     else:
         retry_after = max(0, math.ceil(_ai_reset_at - now))
     last_success_ago = max(0, int(now - _ai_last_success_at)) if _ai_last_success_at else None
