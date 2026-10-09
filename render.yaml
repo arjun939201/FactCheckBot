@@ -16,8 +16,10 @@ services:
         value: openai/gpt-oss-120b
       - key: GROQ_FALLBACK_MODEL
         sync: false
+      # Temporary no-database deployment: SQLite works without a managed DB,
+      # but Render's local filesystem is ephemeral; add PostgreSQL for durable history.
       - key: DATABASE_URL
-        sync: false
+        value: sqlite:///./factcheck.db
       - key: CORS_ORIGINS
         value: '*'
       - key: ALLOWED_HOSTS
