@@ -131,8 +131,8 @@ async def _call_vision_model_impl(model,data,media_type,prompt):
                 message=str(error.get("message","")) if isinstance(error,dict) else ""
             except Exception:
                 message=r.text[:1000]
-            kind="tpm" if re.search(r"tokens? per minute|\\bTPM\\b|token rate limit",message,re.I) else "rpm" if re.search(r"requests? per minute|\\bRPM\\b|request rate limit",message,re.I) else "unknown"
-            token_match=re.search(r"requested\\s+(\\d+)\\s+tokens?",message,re.I)
+            kind="tpm" if re.search(r"tokens? per minute|\bTPM\b|token rate limit",message,re.I) else "rpm" if re.search(r"requests? per minute|\bRPM\b|request rate limit",message,re.I) else "unknown"
+            token_match=re.search(r"requested\s+(\d+)\s+tokens?",message,re.I)
             required_tokens=int(token_match.group(1)) if token_match else None
             reset_delay=_duration_seconds(r.headers.get("x-ratelimit-reset-tokens"))
             if kind=="tpm" and reset_delay is not None:
