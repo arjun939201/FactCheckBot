@@ -37,18 +37,22 @@ function renderResearchProgress(completed=false){
   }).join('')+'</div>';
 }
 function startProgressPolling(){
-  clearInterval(progressPollTimer);
-  progressPollTimer=setInterval(async()=>{
+  clearTimeout(progressPollTimer);
+  const poll=async()=>{
     if(!activeProgressId)return;
     try{
       const r=await fetch('/api/research-progress/'+encodeURIComponent(activeProgressId),{cache:'no-store'});
-      if(!r.ok)return;
-      const d=await r.json();
-      if(progressStages.includes(d.stage)){
-        serverResearchStage=d.stage;renderResearchProgress();
+      if(r.ok){
+        const d=await r.json();
+        if(progressStages.includes(d.stage)){
+          serverResearchStage=d.stage;renderResearchProgress();
+        }
       }
     }catch{}
-  },450);
+    // Schedule only after the previous poll finishes to prevent overlapping requests.
+    if(activeProgressId)progressPollTimer=setTimeout(poll,900);
+  };
+  progressPollTimer=setTimeout(poll,0);
 }
 function busy(on,label='Investigating…',completed=false){
   clearTimeout(statusClearTimer);
@@ -58,7 +62,7 @@ function busy(on,label='Investigating…',completed=false){
     activeProgressId='rp-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10);
     serverResearchStage='breaking';renderResearchProgress();startProgressPolling();
   }else{
-    clearInterval(progressPollTimer);progressPollTimer=null;
+    clearTimeout(progressPollTimer);progressPollTimer=null;
     if(completed){serverResearchStage='collecting';renderResearchProgress(true);statusClearTimer=setTimeout(()=>{$('#status').innerHTML=''},5000)}
     else{$('#status').innerHTML='';activeProgressId=null}
   }
