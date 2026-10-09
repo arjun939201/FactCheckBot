@@ -19,5 +19,7 @@ jobs:
         run: if git ls-files '*.db' | grep -q .; then echo 'Tracked database files are not allowed'; exit 1; fi
       - name: Check frontend JavaScript syntax
         run: node --check frontend/app.js && node --check frontend/share.js
+      - name: Build production Docker image
+        run: docker build --tag factcheckbot:ci .
       - name: Run Python tests
         run: pytest -q
