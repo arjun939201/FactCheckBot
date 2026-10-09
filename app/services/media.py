@@ -39,11 +39,11 @@ def _rate_limit_details(response, attempt:int=0)->tuple[float,str,int|None]:
     except Exception:
         message=str(getattr(response,"text",""))[:1000]
 
-    if re.search(r"tokens? per day|\\bTPD\\b|daily token",message,re.I):
+    if re.search(r"tokens? per day|\bTPD\b|daily token",message,re.I):
         kind="tpd"
-    elif re.search(r"tokens? per minute|\\bTPM\\b|token rate limit",message,re.I):
+    elif re.search(r"tokens? per minute|\bTPM\b|token rate limit",message,re.I):
         kind="tpm"
-    elif re.search(r"requests? per minute|\\bRPM\\b|request rate limit",message,re.I):
+    elif re.search(r"requests? per minute|\bRPM\b|request rate limit",message,re.I):
         kind="rpm"
     else:
         kind="unknown"
@@ -54,7 +54,7 @@ def _rate_limit_details(response, attempt:int=0)->tuple[float,str,int|None]:
             delay=max(0.0,float(headers["Retry-After"])) if headers.get("Retry-After") else None
         except (TypeError,ValueError):
             delay=None
-    hint=re.search(r"try again in\\s+([0-9.]+\\s*(?:ms|h|m|s)(?:\\s*[0-9.]+\\s*(?:ms|h|m|s))*)",message,re.I)
+    hint=re.search(r"try again in\s+([0-9.]+\s*(?:ms|h|m|s)(?:\s*[0-9.]+\s*(?:ms|h|m|s))*)",message,re.I)
     if hint:
         parsed=_duration_seconds(hint.group(1))
         if parsed is not None:
@@ -64,7 +64,7 @@ def _rate_limit_details(response, attempt:int=0)->tuple[float,str,int|None]:
         delay=max(delay or 0.0,reset)
     if delay is None:
         delay=min(300.0,60.0*(2**attempt)) if kind=="tpd" else min(30.0,2.0**attempt)
-    required_match=re.search(r"requested\\s+(\\d+)\\s+tokens?",message,re.I)
+    required_match=re.search(r"requested\s+(\d+)\s+tokens?",message,re.I)
     required=int(required_match.group(1)) if required_match else None
     return max(0.5,delay),kind,required
 
