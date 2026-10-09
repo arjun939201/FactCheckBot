@@ -67,7 +67,7 @@ async function requestWithRateLimitRetry(makeRequest,maxRetries=8){
 function renderResearchProgress(completed=false,failed=false){
   const status=$('#status');if(!status)return;
   status.innerHTML='<div class="research-progress" role="status" aria-live="polite">'+progressStages.map((stage,i)=>{
-    const current=progressStages.indexOf(serverResearchStage),done=completed||i<current,active=!completed&&i===current;
+    const current=progressStages.indexOf(serverResearchStage),done=completed||i<current,active=!completed&&!serverAiWaiting&&i===current;
     const marker=done?'<span class="stage-check">✓</span>':active?'<span class="stage-spinner"></span>':'<span class="stage-empty">◻</span>';
     return '<span class="progress-stage '+(done?'done':active?'active':'pending')+'">'+marker+'<span>'+stage+'</span></span>';
   }).join('')+(serverAiWaiting?'<span class="progress-stage active ai-waiting"><span class="stage-spinner"></span><span>waiting for AI tokens</span></span>':'')+(failed?'<span class="progress-stage failed"><span class="stage-check">!</span><span>failed</span></span>':'')+'</div>';
