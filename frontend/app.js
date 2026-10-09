@@ -29,13 +29,16 @@ $('#mediaInput').onchange=()=>addFiles($('#mediaInput').files);
 $('#mediaBox').addEventListener('drop',ev=>addFiles(ev.dataTransfer.files));
 
 async function request(path,options={}){const r=await fetch('/api'+path,options);const d=await r.json().catch(()=>({}));if(!r.ok){const e=new Error(d.detail||`Request failed (${r.status})`);e.status=r.status;e.retryAfter=Number(r.headers.get('Retry-After')||0);throw e}return d}
-let waitingForAiAvailability=false;
+let waitingForAiAvailability=false,aiWaitReason='rate-limit';
 function renderRetryNotice(){
   if(!waitingForAiAvailability||!activeProgressId)return;
   const status=$('#status');
   if(status){
     renderResearchProgress();
-    status.insertAdjacentHTML('beforeend','<p class="mini-meta" role="status">AI rate limit reached — waiting for AI availability. This investigation will retry automatically when the provider can accept requests.</p>');
+    const message=aiWaitReason==='network'
+      ?'Connection interrupted — waiting for the research service to reconnect. This investigation will retry automatically.'
+      :'AI token limit reached — waiting for provider capacity to refill. This investigation will resume automatically.';
+    status.insertAdjacentHTML('beforeend',`<p class="mini-meta" role="status">${message}</p>`);
   }
 }
 const wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -48,22 +51,42 @@ async function waitUntilAiCanRetry(){
       if(r.ok){
         const d=await r.json();
         aiStatusSnapshot={...d};aiStatusUpdatedAt=Date.now();paintAiStatus();
-        if(d.token_capacity_sufficient===true||['retry_ready','verified','stale','ready'].includes(d.state))return;
+        if(d.state==='unavailable'&&/API key is not configured/i.test(d.detail||'')){
+          waitingForAiAvailability=false;
+          throw new Error('AI API key is not configured on the server.');
+        }
+        if(d.state==='rate_limited'||Number(d.retry_after_seconds||0)>0){
+          aiWaitReason='rate-limit';
+        }else if(d.token_capacity_sufficient===true||['retry_ready','verified','stale','ready'].includes(d.state)){
+          waitingForAiAvailability=false;
+          return;
+        }else{
+          aiWaitReason='network';
+        }
+      }else{
+        aiWaitReason='network';
       }
-    }catch{}
+    }catch(e){
+      if(/API key is not configured/i.test(e.message||''))throw e;
+      aiWaitReason='network';
+    }
+    renderRetryNotice();
     await wait(3000);
   }
 }
-async function requestWithRateLimitRetry(makeRequest,maxRetries=8){
-  for(let attempt=0;;attempt++){
-    try{waitingForAiAvailability=false;return await makeRequest()}
-    catch(e){
-      const isAiLimit=e.status===429&&/AI rate limit|AI analysis is temporarily rate-limited/i.test(e.message);
-      if(!isAiLimit||attempt>=maxRetries)throw e;
-      await waitUntilAiCanRetry();
+async function requestWithRateLimitRetry(makeRequest){
+  for(;;){
+    try{
       waitingForAiAvailability=false;
-      // The real investigation request verifies availability. If the provider
-      // still rejects it, the loop returns here and waits for availability again.
+      return await makeRequest();
+    }catch(e){
+      const isAiLimit=e.status===429&&/AI rate limit|AI analysis is temporarily rate-limited/i.test(e.message);
+      const isNetworkFailure=!e.status&&(e instanceof TypeError||/Failed to fetch|NetworkError|Load failed|fetch failed/i.test(e.message||''));
+      if(!isAiLimit&&!isNetworkFailure)throw e;
+      aiWaitReason=isNetworkFailure?'network':'rate-limit';
+      await waitUntilAiCanRetry();
+      // Retry the same investigation request only after the service is reachable
+      // and the provider cooldown has elapsed. Repeat if the provider is still blocked.
     }
   }
 }
