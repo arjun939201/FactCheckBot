@@ -204,13 +204,13 @@ $('#refreshAiStatus')?.addEventListener('click',refreshAiStatus);
 setInterval(refreshAiStatus,3000);
 refreshAiStatus();
 
-function renderError(e){showResultsHeading();const title=e.status===429?'AI rate limit':e.status===503?'Capability temporarily unavailable':'Investigation could not be completed';$('#result').innerHTML=`<div class="warning"><b>${title}</b><p>${esc(e.message)}</p>${e.status===503?'<p class="mini-meta">This does not mean the uploaded file is invalid. The research service is missing a currently available analysis capability.</p>':''}</div>`}
+function renderError(e){hideResultsHeading();const title=e.status===429?'AI rate limit':e.status===503?'Capability temporarily unavailable':'Investigation could not be completed';$('#result').innerHTML=`<div class="warning"><b>${title}</b><p>${esc(e.message)}</p>${e.status===503?'<p class="mini-meta">This does not mean the uploaded file is invalid. The research service is missing a currently available analysis capability.</p>':''}</div>`}
 
 async function submitMedia(){
   const text=$('#input').value.trim(),url=$('#articleUrl').value.trim();
   if(!text&&!url&&!selectedFiles.length){renderError(Object.assign(new Error('Enter text, add an article URL, or attach a file.'),{status:400}));return;}
   if(url&&!/^https?:\/\//i.test(url)){renderError(Object.assign(new Error('Enter a valid URL starting with https:// or http://.'),{status:400}));return;}
-  busy(true);$('#result').innerHTML='';let completed=false,failed=false;
+  hideResultsHeading();busy(true);$('#result').innerHTML='';let completed=false,failed=false;
   try{
     if(url){
       const d=await requestWithRateLimitRetry(()=>request('/fact-check/url',{method:'POST',headers:{'Content-Type':'application/json','X-Research-ID':activeProgressId},body:JSON.stringify({url,text:url,...prefs()})}));
@@ -277,7 +277,8 @@ async function sendContextChat(value){
 }
 $('#result').addEventListener('submit',e=>{if(e.target.id==='contextChatForm'){e.preventDefault();sendContextChat($('#contextChatInput')?.value)}});
 $('#result').addEventListener('click',e=>{const b=e.target.closest('[data-chat-prompt]');if(b)sendContextChat(b.dataset.chatPrompt)});
-function showResultsHeading(){const heading=$('#resultsHeading');if(heading)heading.classList.add('hidden')}
+function hideResultsHeading(){const heading=$('#resultsHeading');if(heading)heading.classList.add('hidden')}
+function showResultsHeading(){const heading=$('#resultsHeading');if(heading)heading.classList.remove('hidden')}
 function renderResult(d){
   showResultsHeading();
   const uncertainty=d.uncertainties?.length?'<div class="warning"><b>Uncertainty</b><p>'+esc(d.uncertainties[0])+'</p></div>':'';
