@@ -429,3 +429,8 @@ def test_frontend_html_ids_are_unique():
     ids = re.findall(r"\bid=[\"']([^\"']+)[\"']", html)
     duplicates = sorted({value for value in ids if ids.count(value) > 1})
     assert not duplicates, f"Duplicate HTML IDs: {duplicates}"
+
+
+def test_frontend_progress_stages_match_backend():
+    script = (Path(__file__).resolve().parents[1] / "frontend" / "app.js").read_text(encoding="utf-8")
+    assert "const progressStages=['breaking','researching','collecting','analyzing']" in script
