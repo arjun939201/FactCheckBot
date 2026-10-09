@@ -170,3 +170,14 @@ main{padding-top:24px}
  .ai-dashboard{grid-template-columns:1fr 1fr}
  .ai-metric-wide{grid-column:1/-1}
 }
+
+/* URL and options share a compact toolbar above the claim textbox. */
+.composer-topbar{display:flex;align-items:center;gap:14px;padding:12px 20px 0;border-bottom:1px solid var(--line)}
+.composer-topbar .url-entry{flex:1;min-width:0;max-width:none;margin:0}
+.composer-topbar .url-entry label{display:block;white-space:nowrap}
+.composer-topbar .url-entry input{min-width:0;padding:9px 11px}
+.composer-topbar>.link-btn{flex:0 0 auto;white-space:nowrap;border:1px solid var(--line);border-radius:9px;padding:9px 12px;color:var(--ink);background:var(--surface2)}
+.composer-topbar>.link-btn:hover{background:#e7eaed}
+.workspace>.composer{padding-top:12px}
+.workspace>.research-options{border:0;padding:0 20px}
+@media(max-width:560px){.composer-topbar{gap:8px;padding:10px 12px 0}.composer-topbar .url-entry{gap:6px}.composer-topbar .url-entry label{display:block;font-size:10px}.composer-topbar .url-entry input{font-size:12px;padding:9px 8px}.composer-topbar>.link-btn{padding:9px 10px;font-size:12px}.workspace>.composer{padding:10px 12px 12px}.workspace>.research-options{padding:0 12px}}
