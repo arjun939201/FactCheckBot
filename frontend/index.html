@@ -6,7 +6,7 @@
   <meta name="description" content="Fact Check — evidence-first claim verification with live web research.">
   <title>Fact Check — Follow the evidence</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="stylesheet" href="/styles.css?v=answer-first-workspace-20261009">
+  <link rel="stylesheet" href="/styles.css?v=mobile-blue-layout-20261009">
 </head>
 <body>
 <div class="shell">
@@ -33,10 +33,10 @@
 
       <div class="workspace card">
         <div class="composer">
-          <textarea id="input" maxlength="12000" placeholder="Enter the claim, question, statement, post, quote, or text to research…" aria-label="Content to fact-check"></textarea>
+          <div class="claim-input-wrap"><label for="mediaInput" class="claim-attach" aria-label="Attach media" title="Attach image, audio, or video">⌁</label><textarea id="input" maxlength="12000" placeholder="Enter the claim, question, statement, post, quote, or text to research…" aria-label="Content to fact-check"></textarea><div class="claim-char-count"><span id="charCount">0</span>/12,000</div></div>
           <div class="composer-footer">
             <div class="attachment-zone" id="mediaBox">
-              <label for="mediaInput" class="attach-btn">＋ Add media</label>
+              
               <input id="mediaInput" type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif,audio/mpeg,audio/wav,audio/mp4,audio/ogg,audio/webm,video/mp4,video/webm,video/quicktime,video/mpeg">
               <div id="mediaList" class="file-list">No media added</div>
             </div>
@@ -57,7 +57,7 @@
         </div>
         <div class="action-row">
           <div id="status" class="run-status" aria-live="polite"></div>
-          <button id="check" class="primary big">Research <span>→</span></button>
+          <button id="check" class="primary big"><span class="search-symbol">⌕</span> Investigate <span>→</span></button>
         </div>
       </div>
       <div class="results-heading hidden" id="resultsHeading"><span class="eyebrow">RESEARCH REPORT</span><h2>Investigation</h2></div><div id="result" aria-live="polite"></div>
@@ -84,8 +84,9 @@
       <div class="info-note ai-status-note">Token counts and refill timing appear only when the provider returns rate-limit headers. Usage reflects the latest successful AI call, not necessarily the entire investigation. Status is process-local and may reset when the service restarts.</div>
     </section>
   </main>
-  <footer><span>Fact Check</span><span>Evidence over confidence.</span><span id="version"></span></footer>
+  <footer><span>FactCheckBot</span><span>Evidence over confidence.</span><span id="version"></span></footer>
+  <nav class="mobile-tabs" aria-label="Bottom navigation"><button data-v="fact" class="mobile-tab active"><span>⌂</span>Research</button><button data-v="history" class="mobile-tab"><span>◷</span>History</button><button data-v="settings" class="mobile-tab"><span>⚙</span>Settings</button><button data-v="ai-status" class="mobile-tab"><span>▥</span>AI meter</button></nav>
 </div>
-<script src="/app.js?v=answer-first-workspace-20261009"></script>
+<script src="/app.js?v=mobile-blue-layout-20261009"></script>
 </body>
 </html>
