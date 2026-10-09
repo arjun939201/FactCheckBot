@@ -1,4 +1,6 @@
 import pytest
+import re
+from pathlib import Path
 from fastapi.testclient import TestClient
 from app.main import app
 from app.models.factcheck import FactCheckRequest,FactCheckResult,Verdict,ContentType,ClaimAssessment
@@ -420,3 +422,10 @@ def test_progress_wait_resumes_previous_stage():
         progress._current_id.reset(context_token)
         with progress._lock:
             progress._progress.pop("progress-resume-test",None)
+
+
+def test_frontend_html_ids_are_unique():
+    html = (Path(__file__).resolve().parents[1] / "frontend" / "index.html").read_text(encoding="utf-8")
+    ids = re.findall(r'\\bid=[\"\\']([^\"\\']+)[\"\\']', html)
+    duplicates = sorted({value for value in ids if ids.count(value) > 1})
+    assert not duplicates, f"Duplicate HTML IDs: {duplicates}"
