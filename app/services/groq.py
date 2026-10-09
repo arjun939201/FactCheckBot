@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import re
@@ -131,13 +132,23 @@ async def groq_json(instruction):
     for model in candidates:
         # Avoid a known retired Groq model even when an old Render env var remains.
         if model == "llama-3.3-70b-versatile":
-            logger.warning("Skipping known retired Groq model: %s", model)
+            logger.debug("Skipping known retired Groq model: %s", model)
             continue
         # Retired/stale model names can remain in Render environment variables.
         # A 404 must be treated as configuration fallback, not as a request failure.
         try:
-            content=await _request(model,instruction)
-            return _parse_json(content)
+            # TPM limits are temporary. Retry once/twice using Groq's own retry
+            # hint instead of failing the whole research request immediately.
+            for attempt in range(3):
+                try:
+                    content=await _request(model,instruction)
+                    return _parse_json(content)
+                except GroqRateLimitError as e:
+                    if attempt >= 2:
+                        raise
+                    delay=min(max(1.0,e.retry_after),20.0)
+                    logger.warning("Groq TPM limit reached; retry %s/2 after %.1fs",attempt+1,delay)
+                    await asyncio.sleep(delay)
         except httpx.HTTPStatusError as e:
             last_error=e
             if e.response.status_code!=404:
@@ -268,14 +279,15 @@ Return ONLY JSON: {{"questions":["string"]}}"""
 
 async def assess_research_evidence(input_text: str, questions: list[str], candidates: list[dict]) -> dict:
     """Semantically assess a bounded candidate pool and build question-answer evidence links."""
+    # Keep the semantic pass small enough for free-tier TPM budgets.
     compact = [{
         "evidence_id": str(x.get("evidence_id", "")),
-        "title": str(x.get("title", ""))[:220],
-        "publisher": str(x.get("publisher", ""))[:100],
-        "url": str(x.get("url", ""))[:400],
-        "content": str(x.get("content", ""))[:900],
+        "title": str(x.get("title", ""))[:180],
+        "publisher": str(x.get("publisher", ""))[:80],
+        "url": str(x.get("url", ""))[:280],
+        "content": str(x.get("content", ""))[:600],
         "source_type": str(x.get("source_type", "Other")),
-    } for x in candidates[:18]]
+    } for x in candidates[:12]]
     prompt = f"""You are the evidence relevance and research-answer stage.
 ORIGINAL USER QUESTION/CLAIM: {input_text[:1200]}
 FRAMED RESEARCH QUESTIONS: {json.dumps(questions[:5], ensure_ascii=False)}
