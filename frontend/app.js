@@ -156,7 +156,7 @@ function renderError(e){const title=e.status===429?'AI rate limit':e.status===50
 
 async function submitMedia(){
   const text=$('#input').value.trim(),url=$('#articleUrl').value.trim();
-  if(!text&&!url){renderError(Object.assign(new Error('Enter text to research or add an article URL.'),{status:400}));return;}
+  if(!text&&!url&&!selectedFiles.length){renderError(Object.assign(new Error('Enter text, add an article URL, or attach a file.'),{status:400}));return;}
   if(url&&!/^https?:\/\//i.test(url)){renderError(Object.assign(new Error('Enter a valid URL starting with https:// or http://.'),{status:400}));return;}
   busy(true);$('#result').innerHTML='';let completed=false,failed=false;
   try{
