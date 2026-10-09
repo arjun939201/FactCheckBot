@@ -26,6 +26,13 @@ async def request_guard(request:Request,call_next):
         if not _guard.allow(f"{ip}:{path}",limit):
             return JSONResponse({"detail":"Rate limit reached. Please wait a moment and try again."},status_code=429,headers={"Retry-After":"60"})
         length=request.headers.get("content-length")
-        if length and int(length)>s.max_request_bytes:
-            return JSONResponse({"detail":"Request is too large."},status_code=413)
+        if length is not None:
+            try:
+                declared_length=int(length)
+            except (TypeError, ValueError):
+                return JSONResponse({"detail":"Invalid Content-Length header."},status_code=400)
+            if declared_length < 0:
+                return JSONResponse({"detail":"Invalid Content-Length header."},status_code=400)
+            if declared_length > s.max_request_bytes:
+                return JSONResponse({"detail":"Request is too large."},status_code=413)
     return await call_next(request)
