@@ -152,7 +152,7 @@ async def _call_vision_model(model,data,media_type,prompt):
     except MediaRateLimitError as e:
         record_ai_rate_limit(e.retry_after or 10.0)
         raise
-    except (httpx.HTTPError, MediaCapabilityError):
+    except Exception:
         ai_request_failed()
         raise
     finally:
