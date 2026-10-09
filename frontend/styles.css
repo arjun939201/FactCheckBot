@@ -25,3 +25,19 @@
 .result-actions{display:flex;justify-content:flex-end;border-top:1px solid var(--line);margin-top:18px;padding-top:8px}
 .share-link{font-size:12px}
 @media(max-width:560px){.advanced{grid-template-columns:1fr}.context-chat>summary{padding:14px}.context-chat-body{padding:0 12px 13px}.context-chat-message{max-width:96%}.context-chat-compose{gap:6px}.context-chat-compose .primary{padding:9px 11px}}
+
+/* Live AI provider status */
+.status-group{justify-self:end;display:flex;align-items:center;gap:14px;min-width:0}
+.ai-status{gap:6px;white-space:nowrap}
+.ai-status i{flex:0 0 7px}
+.ai-status.ai-available i{background:var(--good)}
+.ai-status.ai-busy i{background:var(--warn);animation:pulse 1s infinite}
+.ai-status.ai-unavailable i{background:var(--bad)}
+.ai-status.ai-unknown i{background:#89919a}
+.ai-status.ai-unavailable span{color:var(--bad)}
+.ai-status.ai-busy span{color:var(--warn)}
+@media(max-width:850px){
+  .status-group{grid-column:2;grid-row:1;gap:0}
+  .status-group .status-pill:not(.ai-status){display:none}
+  .ai-status{font-size:10px;max-width:150px;overflow:hidden;text-overflow:ellipsis}
+}
